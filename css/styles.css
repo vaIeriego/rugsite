@@ -119,10 +119,11 @@ img { max-width: 100%; display: block; object-fit: cover; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   text-align: center;
   min-width: 0;
-  transform: translateY(10px);
+  transform: none;
+  padding-bottom: clamp(18px, 3vw, 40px);
 }
 
 .text-block a {
@@ -487,7 +488,7 @@ body.is-portfolio-view .section.contact {
 
 .text-block__title {
   font-family: var(--font-display);
-  font-size: clamp(1.2rem, 7vw, 50px);
+  font-size: clamp(2rem, 9.6vw, 130px);
   font-weight: 600;
   font-style: normal;
   line-height: 1.1;
@@ -495,20 +496,33 @@ body.is-portfolio-view .section.contact {
   overflow-x: auto;
   color: #ece8e1;
   margin: 0;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.045em;
   text-align: center;
   display: block;
   transform: scaleY(0.85);
   transform-origin: top center;
   min-width: 0;
-  top: 5px;
+  top: 0;
   position: relative;
   animation: heroQuickFade 0.5s ease both;
+  width: 100%;
 }
 
 .text-block__title-home {
   color: inherit;
   text-decoration: none;
+}
+
+/* Always hide the static source title layer; the moving clone is the only
+   visible hero label to prevent a doubled/stagnant VALERIE GONZALEZ. */
+#heroTitle {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  animation: none !important;
+}
+
+#heroTitle .text-block__title-home {
+  pointer-events: none;
 }
 
 .text-block__body {
@@ -584,6 +598,67 @@ body.is-portfolio-view .section.contact {
   transition: background 0.08s ease, color 0.08s ease;
   min-height: 47px;
   transform: translateY(0);
+  overflow: visible;
+}
+
+.topbar > * {
+  position: relative;
+  z-index: 2;
+}
+
+.topbar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background: #f5f0e8;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes topbarWhiteSheetShrinkIntoBar {
+  0% {
+    height: var(--topbar-spring-start-height, 145px);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.37, 0, 0.21, 1);
+  }
+  6% {
+    height: var(--topbar-spring-start-height, 145px);
+    opacity: 1;
+  }
+  100% {
+    height: 100%;
+    opacity: 1;
+  }
+}
+
+@keyframes topbarWhiteSheetExpandMirrorFadeOut {
+  0% {
+    height: 100%;
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.22, 1);
+  }
+  6% {
+    height: 100%;
+    opacity: 1;
+  }
+  100% {
+    height: var(--topbar-collapse-from-height, 145px);
+    opacity: 0;
+  }
+}
+
+body.topbar-spring-in .topbar::before {
+  opacity: 1;
+  animation: topbarWhiteSheetShrinkIntoBar 0.495s both;
+}
+
+body.topbar-spring-out .topbar::before {
+  opacity: 1;
+  animation: topbarWhiteSheetExpandMirrorFadeOut 0.236s both;
 }
 
 body.topbar-static-lock .topbar {
@@ -2583,5 +2658,257 @@ body.olive-follow-active .contact__split-right {
     flex-direction: column;
     gap: 0.5rem;
     text-align: center;
+  }
+}
+
+/* ============================================================
+   HOME PAGE RECOVERY HOOKS
+   Align newer HTML/JS class names with this stylesheet.
+   ============================================================ */
+.topbar__nav-left,
+.topbar__nav-right {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.split__rugs,
+.split__rug {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.split__rug img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.hero-follow-image {
+  opacity: 1;
+  transform: none;
+}
+
+.hero-follow-image.is-visible {
+  animation: fadeUp 0.55s ease both;
+}
+
+.post-hero-reveal {
+  opacity: 1;
+  transform: none;
+}
+
+.post-hero-reveal.is-post-hero-visible {
+  animation: fadeUp 0.5s ease both;
+}
+
+.hero-title-float {
+  position: fixed;
+  left: 50%;
+  top: 0;
+  z-index: 140;
+  margin: 0;
+  pointer-events: auto;
+  color: #ece8e1;
+  text-decoration: none;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 9.6vw, 130px);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.045em;
+  white-space: nowrap;
+  transform-origin: top center;
+  transform: scaleY(0.85);
+}
+
+.hero-title-float.is-dark {
+  color: #1a1a1a;
+}
+
+.hero-title-float.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.hero-square-carousel {
+  width: 100%;
+  margin: 0;
+}
+
+.hero-square-carousel__viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hero-square-carousel__viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.hero-square-carousel__track {
+  display: flex;
+  gap: 14px;
+  width: max-content;
+}
+
+.hero-square-carousel__item {
+  flex: 0 0 auto;
+  width: var(--hero-square-width, 283px);
+}
+
+.hero-square-carousel__item-img-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+}
+
+.hero-square-carousel__item-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hero-square-carousel__item-img--hover {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.hero-square-carousel__item:hover .hero-square-carousel__item-img--hover {
+  opacity: 1;
+}
+
+.hero-square-carousel__controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+}
+
+/* --- Layout for image/text sections beneath hero carousel --- */
+.hero-follow-image {
+  width: 100%;
+  margin: 0;
+}
+
+.hero-traditional-layout,
+.hero-square-carousel-collections {
+  width: 100%;
+}
+
+.hero-square-carousel__extras {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  justify-content: stretch;
+  gap: clamp(20px, 3.2vw, 44px);
+  margin-top: clamp(20px, 3vw, 36px);
+  width: 100%;
+}
+
+.hero-square-carousel__diag-stack {
+  width: 100%;
+  max-width: 100%;
+}
+
+.hero-square-carousel__kees {
+  width: 100%;
+  max-width: 100%;
+}
+
+.hero-square-carousel__kees-copy,
+.hero-square-carousel__collection-two-copy,
+.hero-square-carousel__collection-three-copy,
+.hero-square-carousel__collection-four-copy,
+.hero-square-carousel__collection-five-copy {
+  max-width: 42ch;
+}
+
+.hero-square-carousel-collections {
+  margin-top: clamp(32px, 5vw, 70px);
+}
+
+.hero-square-carousel__collection-two,
+.hero-square-carousel__collection-three,
+.hero-square-carousel__collection-four,
+.hero-square-carousel__collection-five {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  justify-content: stretch;
+  gap: clamp(20px, 3.2vw, 44px);
+  margin-top: clamp(32px, 5vw, 70px);
+  width: 100%;
+}
+
+.hero-square-carousel__collection-three,
+.hero-square-carousel__collection-five {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.hero-square-carousel__collection-two-image-wrap,
+.hero-square-carousel__collection-three-image-wrap,
+.hero-square-carousel__collection-four-image-wrap,
+.hero-square-carousel__collection-five-image-wrap {
+  width: 100%;
+  max-width: 100%;
+  justify-self: stretch;
+  position: relative;
+}
+
+.hero-square-carousel__collection-two-image,
+.hero-square-carousel__collection-three-image,
+.hero-square-carousel__collection-four-image,
+.hero-square-carousel__collection-five-image {
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.hero-square-carousel__collection-two-collage-overlay,
+.hero-square-carousel__collection-three-collage-overlay,
+.hero-square-carousel__collection-four-collage-overlay,
+.hero-square-carousel__collection-five-collage-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hero-square-carousel__collection-two-text,
+.hero-square-carousel__collection-three-text,
+.hero-square-carousel__collection-four-text,
+.hero-square-carousel__collection-five-text {
+  width: 100%;
+  max-width: 100%;
+  justify-self: stretch;
+}
+
+@media (max-width: 980px) {
+  .hero-follow-image {
+    width: 100%;
+  }
+
+  .hero-square-carousel__extras,
+  .hero-square-carousel__collection-two,
+  .hero-square-carousel__collection-three,
+  .hero-square-carousel__collection-four,
+  .hero-square-carousel__collection-five {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .hero-square-carousel__kees,
+  .hero-square-carousel__collection-two-text,
+  .hero-square-carousel__collection-three-text,
+  .hero-square-carousel__collection-four-text,
+  .hero-square-carousel__collection-five-text {
+    max-width: 100%;
   }
 }

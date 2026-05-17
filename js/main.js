@@ -64,6 +64,40 @@ let springInSheetAnimStartMs = null;
 /** Same for scroll-up spring-out (sheet grows away from the bar). */
 let springOutSheetAnimStartMs = null;
 
+const getSessionStorageSafe = () => {
+  try {
+    const store = window.sessionStorage;
+    const probeKey = "__valerieweb_ss_probe__";
+    store.setItem(probeKey, "1");
+    store.removeItem(probeKey);
+    return store;
+  } catch (_err) {
+    return null;
+  }
+};
+const sessionStore = getSessionStorageSafe();
+const sessionGet = (key) => {
+  try {
+    return sessionStore ? sessionStore.getItem(key) : null;
+  } catch (_err) {
+    return null;
+  }
+};
+const sessionSet = (key, value) => {
+  try {
+    if (sessionStore) sessionStore.setItem(key, value);
+  } catch (_err) {
+    // no-op: sessionStorage can be blocked on file:// or strict privacy modes
+  }
+};
+const sessionRemove = (key) => {
+  try {
+    if (sessionStore) sessionStore.removeItem(key);
+  } catch (_err) {
+    // no-op: sessionStorage can be blocked on file:// or strict privacy modes
+  }
+};
+
 const hamburger = document.getElementById("hamburger");
 const nav = document.getElementById("navOverlay");
 const navClose = document.getElementById("navClose");
@@ -195,7 +229,6 @@ const heroSquareNext = document.querySelector(".hero-square-carousel__arrow--rig
 
 if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
   const heroSquareTrack = heroSquareViewport.querySelector(".hero-square-carousel__track");
-  let heroGapCandidatesCache = null;
   if (heroSquareTrack && !heroSquareTrack.dataset.loopReady) {
     const originals = Array.from(heroSquareTrack.children);
     originals.forEach((item) => heroSquareTrack.appendChild(item.cloneNode(true)));
@@ -322,64 +355,24 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     return firstItem.getBoundingClientRect().width / 2;
   };
 
-  const HERO_SQUARE_WIDTH_BOOST_PX = 10;
+  const HERO_SQUARE_WIDTH_BOOST_PX = 0;
 
-  const applySixAcrossHalfCutFrame = () => {
+  const applyFiveAcrossHalfCutFrame = () => {
     const track = heroSquareViewport.querySelector(".hero-square-carousel__track");
     if (!track) return;
     const gap = parseFloat(window.getComputedStyle(track).gap || "0");
     const viewportWidth = heroSquareViewport.clientWidth || window.innerWidth;
-    // Exactly 6 slots visible (½ + 4 + ½ tiles) ⇒ 5 tile widths + 5 gaps span the viewport width.
+    // Exactly 5 squares across with half-cut ends:
+    // (0.5 + 1 + 1 + 1 + 0.5) tiles + 4 gaps => 4 tile widths + 4 gaps span viewport.
     const slotWidth = Math.max(
       1,
-      (viewportWidth - gap * 5) / 5 + HERO_SQUARE_WIDTH_BOOST_PX
+      (viewportWidth - gap * 4) / 4 + HERO_SQUARE_WIDTH_BOOST_PX
     );
     heroSquareViewport.style.setProperty("--hero-square-width", `${slotWidth}px`);
-    heroGapCandidatesCache = null;
-  };
-
-  /**
-   * Scroll positions where the viewport horizontal center sits on a tile-gap midpoint
-   * (track coords: gapCenter − viewportWidth/2), one per gap in the first loop copy.
-   */
-  const getGapAlignedScrollCandidates = () => {
-    if (heroGapCandidatesCache) return heroGapCandidatesCache;
-    if (!heroSquareTrack) return [];
-    const items = heroSquareTrack.querySelectorAll(".hero-square-carousel__item");
-    const loopW = getLoopWidth();
-    if (!items.length || loopW <= 1) return [];
-    const half = Math.floor(items.length / 2);
-    const W = heroSquareViewport.clientWidth;
-    if (W < 1) return [];
-    const out = [];
-    for (let i = 0; i < half - 1; i++) {
-      const a = items[i];
-      const b = items[i + 1];
-      const gapPx = b.offsetLeft - a.offsetLeft - a.offsetWidth;
-      const gapCenter = a.offsetLeft + a.offsetWidth + gapPx / 2;
-      out.push(normalizeLoopPositionValue(gapCenter - W / 2));
-    }
-    heroGapCandidatesCache = out;
-    return out;
   };
 
   const snapToNearestSlot = (value) => {
-    const loopW = getLoopWidth();
     const normalized = normalizeLoopPositionValue(value);
-    const candidates = getGapAlignedScrollCandidates();
-    if (candidates.length && loopW > 1) {
-      let best = candidates[0];
-      let bestD = Infinity;
-      for (let c = 0; c < candidates.length; c++) {
-        const cand = candidates[c];
-        const d = Math.min(Math.abs(normalized - cand), loopW - Math.abs(normalized - cand));
-        if (d < bestD) {
-          bestD = d;
-          best = cand;
-        }
-      }
-      return best;
-    }
     const step = getStep();
     if (step <= 1) return normalized;
     const halfOffset = getHalfCutOffset();
@@ -442,7 +435,7 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
   });
 
   window.addEventListener("resize", () => {
-    applySixAcrossHalfCutFrame();
+    applyFiveAcrossHalfCutFrame();
     void heroSquareViewport.offsetWidth;
     currentX = snapToNearestSlot(heroSquareViewport.scrollLeft);
     targetX = currentX;
@@ -471,19 +464,11 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     animateBy(step, AUTO_SLIDE_DURATION_MS);
   };
 
-  applySixAcrossHalfCutFrame();
+  applyFiveAcrossHalfCutFrame();
 
   const syncInitialGapCenterScroll = () => {
-    applySixAcrossHalfCutFrame();
+    applyFiveAcrossHalfCutFrame();
     void heroSquareViewport.offsetWidth;
-    const candidates = getGapAlignedScrollCandidates();
-    if (candidates.length) {
-      const mid = Math.floor((candidates.length - 1) / 2);
-      currentX = candidates[mid];
-      targetX = currentX;
-      heroSquareViewport.scrollLeft = currentX;
-      return;
-    }
     const initialHalfCutOffset = getHalfCutOffset();
     if (initialHalfCutOffset > 1) {
       currentX = normalizeLoopPositionValue(initialHalfCutOffset);
@@ -505,7 +490,7 @@ const topbarHomeLink = document.querySelector('#topbar a[href="index.html"]');
 const topbarResumeLink = document.querySelector(".topbar__resume-link");
 if (topbarHomeLink) {
   topbarHomeLink.addEventListener("click", () => {
-    window.sessionStorage.removeItem("valerieweb.collectionMode");
+    sessionRemove("valerieweb.collectionMode");
   });
 }
 
@@ -1458,9 +1443,9 @@ if (collectionSection) {
       teardownPortfolioLoop();
     }
     if (mode) {
-      window.sessionStorage.setItem(COLLECTION_MODE_KEY, mode);
+      sessionSet(COLLECTION_MODE_KEY, mode);
     } else {
-      window.sessionStorage.removeItem(COLLECTION_MODE_KEY);
+      sessionRemove(COLLECTION_MODE_KEY);
     }
     updateCollectionTitleSelection(mode);
     updateHeroPortfolioState(mode);
@@ -1582,7 +1567,7 @@ if (collectionSection) {
     );
   }
 
-  const savedMode = window.sessionStorage.getItem(COLLECTION_MODE_KEY);
+  const savedMode = sessionGet(COLLECTION_MODE_KEY);
   if (savedMode === "mode-recent" || savedMode === "mode-portfolio") {
     setCollectionMode(savedMode, "init");
   } else {
@@ -1886,7 +1871,7 @@ if (splitRightPortfolioLink) {
     if (viewPortfolioToggle) {
       viewPortfolioToggle.click();
     }
-    window.sessionStorage.setItem("valerieweb.collectionMode", "mode-portfolio");
+    sessionSet("valerieweb.collectionMode", "mode-portfolio");
     if (window.location.hash !== "#collection") {
       window.location.hash = "collection";
     } else if (collectionSection) {
