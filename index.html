@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en" class="layout-no-shrink" style="--topbar-collapse-from-height: 145px;">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Local dev: avoid stale CSS/JS while iterating (use with npm run dev:fresh for no-cache static server). -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<title>MySite</title>
+<!-- Sync FOUC guard: base .topbar is off-white in stylesheet; block white strip until JS clears hero-fouc-pending. -->
+<style>
+html.hero-fouc-pending body.page-home #topbar,
+html.hero-fouc-pending body.page-home #topbar.is-solid {
+background: transparent !important;
+box-shadow: none !important;
+}
+html.hero-fouc-pending body.page-home #topbar::before,
+html.hero-fouc-pending body.page-home #topbar.is-solid::before {
+opacity: 0 !important;
+}
+html.hero-fouc-pending .hero-title-float:not(.is-layout-ready) {
+opacity: 0 !important;
+visibility: hidden !important;
+pointer-events: none !important;
+}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Montserrat:wght@300;400;500;700&family=Playfair+Display:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css?v=1219">
+<!-- Orange strip: solid fill + measure chip (matches SVG #d35a1a). -->
+<style id="hero-orange-strip">
+#traditional-orange-strip.hero-square-carousel__orange-frame {
+width: calc(1.2 * (400 / 520 * 100% - 71px)) !important;
+height: calc(1.2 * (311 / 520 * 100% - 44px)) !important;
+max-width: none !important;
+z-index: 25 !important;
+background-color: #d35a1a !important;
+box-sizing: border-box !important;
+}
+#traditional-orange-strip .hero-square-carousel__kees-rect--orange {
+display: block !important;
+opacity: 1 !important;
+visibility: visible !important;
+mix-blend-mode: normal !important;
+}
+#traditional-orange-strip .traditional-orange-strip__measure {
+position: absolute;
+left: 8px;
+top: 8px;
+z-index: 60;
+font: 600 11px/1.25 ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+background: rgba(15, 13, 13, 0.94);
+color: #f6f4ee;
+padding: 5px 9px;
+pointer-events: none;
+letter-spacing: 0.03em;
+box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+</style>
+</head>
+<body class="page-home nav-scroll-hydrated">
+
+<!-- ========== FIXED TOP BAR ========== -->
+<header class="topbar" id="topbar">
+<nav class="topbar__nav-left" aria-label="Work">
+<a href="index.html#home" class="topbar__inquire">Rugs</a>
+<a href="#collection" class="topbar__inquire">Collections</a>
+</nav>
+<nav class="topbar__nav-right" aria-label="Site links">
+<a href="about.html" class="topbar__inquire">About</a>
+<a href="contact.html" class="topbar__inquire">Contact</a>
+<a href="#contact" class="topbar__inquire topbar__resume-link">Resume</a>
+<button class="hamburger" id="hamburger" aria-label="Open menu" aria-expanded="false">
+<span class="hamburger__line"></span>
+<span class="hamburger__line"></span>
+</button>
+</nav>
+</header>
+
+<!-- ========== SPLIT HERO ==========-->
+<section class="split" id="home">
+
+<!-- FULL HERO — three rugs -->
+<div class="split__rugs split__rugs--single" aria-hidden="true">
+<figure class="split__rug split__rug--single">
+<img src="images/3%20rugs.png" alt="Layered neutral rugs" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</figure>
+</div>
+
+<!-- TITLE — absolute overlay centered across hero -->
+<div class="text-block" id="textBlock">
+<h1 class="text-block__title is-scroll-proxy-source" id="heroTitle" style="--hero-title-bottom-lift: 37.00px;"><a href="index.html#home" class="text-block__title-home" aria-label="VALERIE GONZALEZ">V<span class="kern-after-v">A</span>LERI<span class="kern-after-l">E</span> G<span class="kern-after-g">O</span>NZALEZ</a></h1>
+</div>
+
+</section>
+
+<section class="hero-follow-image" aria-label="Featured image">
+<img class="hero-follow-image__mark" src="images/v_123.png" alt="v123" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<p class="hero-follow-image__sub">print designer | rugs</p>
+<a href="contact.html" class="hero-follow-image__contact">CONTACT</a>
+<div class="hero-square-carousel" aria-label="Featured square image carousel">
+<div class="hero-square-carousel__viewport" aria-busy="true" style="--hero-square-width: 283px;">
+<div class="hero-square-carousel__track" data-loop-ready="true">
+<article class="hero-square-carousel__item">
+<div class="hero-square-carousel__item-img-wrap">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--base" src="images/carousel-square.jpg?v=1" alt="Square featured rug 1" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--hover" src="images/project-placeholder.jpg" alt="Square featured rug 1 alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<span class="hero-square-carousel__item-label">Peony</span>
+</article>
+<article class="hero-square-carousel__item">
+<div class="hero-square-carousel__item-img-wrap">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--base" src="images/carousel-square.jpg?v=1" alt="Square featured rug 2" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--hover" src="images/project-placeholder.jpg" alt="Square featured rug 2 alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<span class="hero-square-carousel__item-label">Guava</span>
+</article>
+<article class="hero-square-carousel__item">
+<div class="hero-square-carousel__item-img-wrap">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--base" src="images/carousel-square.jpg?v=1" alt="Square featured rug 3" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--hover" src="images/project-placeholder.jpg" alt="Square featured rug 3 alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<span class="hero-square-carousel__item-label">Denim</span>
+</article>
+<article class="hero-square-carousel__item">
+<div class="hero-square-carousel__item-img-wrap">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--base" src="images/carousel-square.jpg?v=1" alt="Square featured rug 4" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--hover" src="images/project-placeholder.jpg" alt="Square featured rug 4 alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<span class="hero-square-carousel__item-label">Honey</span>
+</article>
+<article class="hero-square-carousel__item">
+<div class="hero-square-carousel__item-img-wrap">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--base" src="images/carousel-square.jpg?v=1" alt="Square featured rug 5" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--hover" src="images/project-placeholder.jpg" alt="Square featured rug 5 alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<span class="hero-square-carousel__item-label">Cocoa</span>
+</article>
+<article class="hero-square-carousel__item">
+<div class="hero-square-carousel__item-img-wrap">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--base" src="images/carousel-square.jpg?v=1" alt="Square featured rug 6" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--hover" src="images/project-placeholder.jpg" alt="Square featured rug 6 alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<span class="hero-square-carousel__item-label">Violet</span>
+</article>
+<article class="hero-square-carousel__item">
+<div class="hero-square-carousel__item-img-wrap">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--base" src="images/carousel-square.jpg?v=1" alt="Square featured rug 7" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--hover" src="images/project-placeholder.jpg" alt="Square featured rug 7 alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<span class="hero-square-carousel__item-label">Espresso</span>
+</article>
+<article class="hero-square-carousel__item">
+<div class="hero-square-carousel__item-img-wrap">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--base" src="images/carousel-square.jpg?v=1" alt="Square featured rug 8" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="hero-square-carousel__item-img hero-square-carousel__item-img--hover" src="images/project-placeholder.jpg" alt="Square featured rug 8 alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<span class="hero-square-carousel__item-label">Starfish</span>
+</article>
+</div>
+</div>
+<div class="hero-square-carousel__controls" aria-hidden="false">
+<button class="hero-square-carousel__arrow hero-square-carousel__arrow--left" type="button" aria-label="Previous images" disabled=""><</button>
+<button class="hero-square-carousel__arrow hero-square-carousel__arrow--right" type="button" aria-label="Next images" disabled="">></button>
+</div>
+</div>
+
+<div class="hero-traditional-layout" aria-label="Traditional collage and overview">
+<div class="hero-square-carousel__extras">
+<div class="hero-square-carousel__diag-stack">
+<div class="hero-square-carousel__kees-rects">
+<div class="hero-square-carousel__kees-brown-frame">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--brown" src="images/kees-rect-brown.svg?v=2" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--yellow" src="images/kees-yellow-square.png?v=1" width="143" height="237" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<div id="traditional-orange-strip" class="hero-square-carousel__orange-frame" title="Rendered 98 × 76 px · target 98 × 76" style="width: 97.9587px !important; height: 75.908px !important; max-width: none !important; z-index: 25 !important; background-color: rgb(211, 90, 26) !important;">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--orange" src="images/kees-rect-orange.svg?v=4" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<span class="traditional-orange-strip__measure" aria-hidden="true">98 × 76 px</span></div>
+</div>
+</div>
+<aside class="hero-square-carousel__kees" aria-label="Collection Traditional overview">
+<p class="hero-square-carousel__kees-eyebrow">Collection</p>
+<h2 class="hero-square-carousel__kees-title">Traditional</h2>
+<p class="hero-square-carousel__kees-copy">
+Introducing Traditional, the latest collection inspired by the vibrant jewel tones
+seen in Kees van Dongen's iconic 1930 painting <em>Woman on Sofa</em>.
+Drawing from rich emerald greens, soft pinks, and delicate purples, the
+collection captures the artwork's bold yet sophisticated palette across
+carefully crafted woven and hand-printed fabrics.
+</p>
+<a class="hero-square-carousel__kees-cta" href="#collection">Explore Collection</a>
+</aside>
+</div>
+</div>
+
+<div class="hero-square-carousel-collections">
+<section class="hero-square-carousel__collection-two" aria-label="Collection 2 details">
+<div class="hero-square-carousel__collection-two-text">
+<p class="hero-square-carousel__collection-two-eyebrow">New Fabric</p>
+<h2 class="hero-square-carousel__collection-two-title">Floral</h2>
+<p class="hero-square-carousel__collection-two-copy">
+Floral is our first print fabric; a vibrant and luscious floral that will
+transport you to the whimsical designs of 1940's Italy with a touch of glamour
+from the Hollywood Regency era all wrapped up with a punch.
+</p>
+<a class="hero-square-carousel__collection-two-cta" href="#collection">Explore</a>
+</div>
+<figure class="hero-square-carousel__collection-two-image-wrap" aria-hidden="true">
+<img class="hero-square-carousel__collection-two-image" src="images/collection-2-image-transparent.png" alt="" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<!-- Reference clone of Traditional collage for aligning to artwork (tune --ref-collage-* on overlay). -->
+<div class="hero-square-carousel__collection-two-collage-overlay">
+<div class="hero-square-carousel__kees-rects hero-square-carousel__kees-rects--floral-reference" aria-hidden="true">
+<div class="hero-square-carousel__kees-brown-frame">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--brown" src="images/kees-rect-brown.svg?v=2" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<div class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--yellow" aria-hidden="true"></div>
+<div class="hero-square-carousel__orange-frame hero-square-carousel__orange-frame--floral-reference">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--orange" src="images/kees-rect-orange.svg?v=4" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+</div>
+</div>
+</figure>
+</section>
+<section class="hero-square-carousel__collection-three" aria-label="Collection Geo Mod details">
+<figure class="hero-square-carousel__collection-three-image-wrap" aria-hidden="true">
+<img class="hero-square-carousel__collection-three-image" src="images/rousseau-left.png" alt="" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<div class="hero-square-carousel__collection-three-collage-overlay">
+<div class="hero-square-carousel__kees-rects hero-square-carousel__kees-rects--geo-mod-reference" aria-hidden="true">
+<div class="hero-square-carousel__kees-brown-frame">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--brown" src="images/kees-rect-brown.svg?v=2" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<div class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--yellow" aria-hidden="true"></div>
+<div class="hero-square-carousel__orange-frame hero-square-carousel__orange-frame--geo-reference">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--orange" src="images/kees-rect-orange.svg?v=4" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+</div>
+</div>
+</figure>
+<div class="hero-square-carousel__collection-three-text">
+<p class="hero-square-carousel__collection-three-eyebrow">Collection</p>
+<h2 class="hero-square-carousel__collection-three-title">Geo Mod</h2>
+<p class="hero-square-carousel__collection-three-copy">
+Collection Geo Mod is inspired by Henri Rousseau's <em>Tropical Forest with Monkeys</em>
+(1910) featuring a lush landscape with monkeys dancing about. Henri Rousseau never left
+France and painted his exotic depictions from what he saw at the botanical gardens
+and zoos around Paris. Our collection features timeless yet fresh patterns. Shades
+of maroon and olive mingle with evergreen and sky blue to create unexpected and
+exciting color combinations.
+</p>
+<a class="hero-square-carousel__collection-three-cta" href="#collection">Explore Collection</a>
+</div>
+</section>
+<section class="hero-square-carousel__collection-four" aria-label="Collection Reni details">
+<div class="hero-square-carousel__collection-four-text">
+<p class="hero-square-carousel__collection-four-eyebrow">Collection</p>
+<h2 class="hero-square-carousel__collection-four-title">Reni</h2>
+<p class="hero-square-carousel__collection-four-copy">
+Guido Reni (1575-1642) was one of the great Italian Baroque painters. His oil
+painting of mythological <em>Auriter and Europa</em> (1640) features colors spring
+days long for - blush, tangerine, heather gray and lavender. Our Reni collection is
+inspired by that Baroque palette, but refreshes it with eye-catching patterns.
+</p>
+<a class="hero-square-carousel__collection-four-cta" href="#collection">Explore Collection</a>
+</div>
+<figure class="hero-square-carousel__collection-four-image-wrap" aria-hidden="true">
+<img class="hero-square-carousel__collection-four-image" src="images/reni-new.png" alt="" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<div class="hero-square-carousel__collection-four-collage-overlay">
+<div class="hero-square-carousel__kees-rects hero-square-carousel__kees-rects--reni-reference" aria-hidden="true">
+<div class="hero-square-carousel__kees-brown-frame">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--brown" src="images/kees-rect-brown.svg?v=2" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<div class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--yellow" aria-hidden="true"></div>
+<div class="hero-square-carousel__orange-frame hero-square-carousel__orange-frame--reni-reference">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--orange" src="images/kees-rect-orange.svg?v=4" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+</div>
+</div>
+</figure>
+</section>
+<section class="hero-square-carousel__collection-five" aria-label="Collection Matisse details">
+<div class="hero-square-carousel__collection-five-text">
+<p class="hero-square-carousel__collection-five-eyebrow">Collection</p>
+<h2 class="hero-square-carousel__collection-five-title">Matisse</h2>
+<p class="hero-square-carousel__collection-five-copy">
+Our Matisse Collection is inspired by French painter Henri Matisse's 1935 work,
+<em>Large Reclining Nude</em>. The painting's vibrant primary colors and checkerboard
+patterns become the backdrop for a sinuous figure. Our collection mimics the color
+combinations and layers of the painting, creating fabrics that are bold and exuberant,
+with a touch of the avant-garde.
+</p>
+<a class="hero-square-carousel__collection-five-cta" href="#collection">Explore Collection</a>
+</div>
+<figure class="hero-square-carousel__collection-five-image-wrap" aria-hidden="true">
+<img class="hero-square-carousel__collection-five-image" src="images/matisse.png" alt="" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<div class="hero-square-carousel__collection-five-collage-overlay">
+<div class="hero-square-carousel__kees-rects hero-square-carousel__kees-rects--matisse-reference" aria-hidden="true">
+<div class="hero-square-carousel__kees-brown-frame">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--brown" src="images/kees-rect-brown.svg?v=2" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<div class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--yellow" aria-hidden="true"></div>
+<div class="hero-square-carousel__orange-frame hero-square-carousel__orange-frame--matisse-reference">
+<img class="hero-square-carousel__kees-rect hero-square-carousel__kees-rect--orange" src="images/kees-rect-orange.svg?v=4" alt="" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+</div>
+</div>
+</figure>
+</section>
+</div>
+</section>
+
+<!-- ========== FULL-SCREEN NAV OVERLAY ========== -->
+<nav class="nav-overlay" id="navOverlay" aria-hidden="true">
+<button class="nav-overlay__close" id="navClose" type="button" aria-label="Close menu">✕</button>
+<ul class="nav-overlay__list">
+<li><a href="#collection">Collection</a></li>
+<li><a href="about.html">About</a></li>
+<li><a href="contact.html">Contact</a></li>
+</ul>
+</nav>
+
+<!-- ========== COLLECTION ========== -->
+<section id="collection" class="section collection">
+<div class="portfolio-carousel">
+<button class="portfolio-arrow portfolio-arrow--left" type="button" aria-label="Previous portfolio card" disabled=""><</button>
+<div class="portfolio-viewport">
+<div class="cards">
+<a class="card card--project-link" href="projects/nomad-no-01.html">
+<div class="card__img-wrap">
+<img class="card__img card__img--base" src="images/project-placeholder.jpg" alt="Nomad rug" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="card__img card__img--hover" src="images/project-placeholder.jpg" alt="Nomad rug alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<p class="card__label">Nomad No. 01 — Hand-knotted wool, 2023</p>
+</a>
+<a class="card card--project-link" href="projects/bloom-no-02.html">
+<div class="card__img-wrap">
+<img class="card__img card__img--base" src="images/project-placeholder.jpg" alt="Bloom rug" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+<img class="card__img card__img--hover" src="images/project-placeholder.jpg" alt="Bloom rug alternate view" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</div>
+<p class="card__label">Bloom No. 02 — Printed linen, 2024</p>
+</a>
+<!-- truncated for brevity -->
+<script src="js/traditional-orange-strip.js?v=990"></script>
+<script src="js/image-protect.js?v=1"></script>
+<script src="js/main.js?v=318"></script><a class="hero-title-float is-layout-ready" href="http://127.0.0.1:3000/index.html#home" aria-label="Go to main page" style="transform: translate3d(-50%, 208.84px, 0px) scale(0.3768, 0.4235);">V<span class="kern-after-v">A</span>LERI<span class="kern-after-l">E</span> G<span class="kern-after-g">O</span>NZALEZ</a>
+
+
+</body>
+</html>
