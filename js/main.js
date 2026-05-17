@@ -1093,6 +1093,7 @@ if (topbar && mainHeroSplit && heroTitle) {
           1 - scalePLinear,
           HERO_TITLE_SCALE_SCROLL_STEEPNESS
         );
+      topbar.style.setProperty("--hero-nav-collapse-progress", scaleP.toFixed(4));
       heroTitle.style.setProperty(
         "--hero-title-bottom-lift",
         `${(scaleP * HERO_TITLE_BOTTOM_LIFT_MAX_PX).toFixed(2)}px`
@@ -1161,12 +1162,13 @@ if (topbar && mainHeroSplit && heroTitle) {
         navRect.top + (layoutHeight - sourceRect.height * scale) * 0.5;
       const dockTopLive = dockDisplayTop - sourceRect.height * (1 - scale);
       const sourceY = sourceRect.top;
-      const y = Math.max(dockTopLive, sourceY);
+      const y = Math.max(navRect.top + 2, Math.max(dockTopLive, sourceY));
 
       floatingTitle.style.transform = `translate3d(-50%, ${y.toFixed(2)}px, 0) scale(${scaleX.toFixed(4)}, ${scaleY.toFixed(4)})`;
       floatingTitle.style.visibility = "visible";
       floatingTitle.style.opacity = "1";
       floatingTitle.classList.add("is-layout-ready");
+      document.body.classList.add("hero-float-ready");
       floatingTitle.style.removeProperty("opacity");
       floatingTitle.style.removeProperty("visibility");
 
@@ -1178,7 +1180,7 @@ if (topbar && mainHeroSplit && heroTitle) {
         titleRect.right > navRect.left &&
         titleRect.left < navRect.right;
       const wantsDarkText =
-        topbar.classList.contains("is-solid") && overlapsNav;
+        topbar.classList.contains("is-solid") || overlapsNav;
       floatingTitle.classList.toggle("is-dark", wantsDarkText);
       floatingTitle.classList.toggle("is-hidden", !!(nav && nav.classList.contains("is-open")));
     };
