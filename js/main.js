@@ -348,37 +348,31 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     return firstItem.getBoundingClientRect().width + gap;
   };
 
-  const getHalfCutOffset = () => {
-    const firstItem = heroSquareViewport.querySelector(".hero-square-carousel__item");
-    if (!firstItem) return 0;
-    // Half-cut edges should be based on square width only, not gap.
-    return firstItem.getBoundingClientRect().width / 2;
-  };
-
   const HERO_SQUARE_WIDTH_BOOST_PX = 0;
 
-  const applyFiveAcrossHalfCutFrame = () => {
+  const applySixAcrossWithHalfCutEnds = () => {
     const track = heroSquareViewport.querySelector(".hero-square-carousel__track");
     if (!track) return;
     const gap = parseFloat(window.getComputedStyle(track).gap || "0");
     const viewportWidth = heroSquareViewport.clientWidth || window.innerWidth;
-    // Exactly 5 squares across with half-cut ends:
-    // (0.5 + 1 + 1 + 1 + 0.5) tiles + 4 gaps => 4 tile widths + 4 gaps span viewport.
+    // Show 6 visible squares total, with the outer 2 cropped to half-width.
+    // Visible width: 5 full slots + 5 gaps.
     const slotWidth = Math.max(
       1,
-      (viewportWidth - gap * 4) / 4 + HERO_SQUARE_WIDTH_BOOST_PX
+      (viewportWidth - gap * 5) / 5 + HERO_SQUARE_WIDTH_BOOST_PX
     );
     heroSquareViewport.style.setProperty("--hero-square-width", `${slotWidth}px`);
   };
+
+  const getEdgeHalfCutOffset = () => getStep() * 0.5;
 
   const snapToNearestSlot = (value) => {
     const normalized = normalizeLoopPositionValue(value);
     const step = getStep();
     if (step <= 1) return normalized;
-    const halfOffset = getHalfCutOffset();
-    const relative = normalized - halfOffset;
-    const slot = Math.round(relative / step);
-    return normalizeLoopPositionValue(slot * step + halfOffset);
+    const offset = getEdgeHalfCutOffset();
+    const slot = Math.round((normalized - offset) / step);
+    return normalizeLoopPositionValue(offset + slot * step);
   };
 
   const nudgeOneSquare = (direction) => {
@@ -435,7 +429,7 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
   });
 
   window.addEventListener("resize", () => {
-    applyFiveAcrossHalfCutFrame();
+    applySixAcrossWithHalfCutEnds();
     void heroSquareViewport.offsetWidth;
     currentX = snapToNearestSlot(heroSquareViewport.scrollLeft);
     targetX = currentX;
@@ -464,21 +458,18 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     animateBy(step, AUTO_SLIDE_DURATION_MS);
   };
 
-  applyFiveAcrossHalfCutFrame();
+  applySixAcrossWithHalfCutEnds();
 
-  const syncInitialGapCenterScroll = () => {
-    applyFiveAcrossHalfCutFrame();
+  const syncInitialFrameScroll = () => {
+    applySixAcrossWithHalfCutEnds();
     void heroSquareViewport.offsetWidth;
-    const initialHalfCutOffset = getHalfCutOffset();
-    if (initialHalfCutOffset > 1) {
-      currentX = normalizeLoopPositionValue(initialHalfCutOffset);
-      targetX = currentX;
-      heroSquareViewport.scrollLeft = currentX;
-    }
+    currentX = normalizeLoopPositionValue(getEdgeHalfCutOffset());
+    targetX = currentX;
+    heroSquareViewport.scrollLeft = currentX;
   };
 
   requestAnimationFrame(() => {
-    requestAnimationFrame(syncInitialGapCenterScroll);
+    requestAnimationFrame(syncInitialFrameScroll);
   });
 
   autoStepTimer = window.setInterval(autoStepOnce, AUTO_STEP_MS);
@@ -1045,6 +1036,8 @@ if (topbar && mainHeroSplit && heroTitle) {
     const HERO_TITLE_SCALE_SCROLL_STEEPNESS = 1.25;
     /** Widen dock target so fully shrunk text reads ~this many pt larger (CSS pt → px at 96dpi). */
     const HERO_DOCK_FINAL_SIZE_BOOST_PT = 5;
+    /** Fine tune docked title vertical position in navbar (positive moves down). */
+    const HERO_DOCK_Y_OFFSET_PX = 0;
     const CSS_PT_TO_PX = 96 / 72;
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -1056,6 +1049,8 @@ if (topbar && mainHeroSplit && heroTitle) {
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
       const navRect = topbar.getBoundingClientRect();
+      const navLinkRow = topbar.querySelector(".topbar__nav-right");
+      const navLinkRect = navLinkRow ? navLinkRow.getBoundingClientRect() : navRect;
       const sourceWidth = Math.max(sourceRect.width, 1);
       const desiredDockWidth =
         Math.min(layoutViewportWidthPx() * 0.28, 290) +
@@ -1066,9 +1061,12 @@ if (topbar && mainHeroSplit && heroTitle) {
       startTop = sourceRect.top;
       sourceAbsTop = sourceRect.top + currentScrollY;
       {
-        const dockDisplayTop = navRect.top + (navRect.height - sourceRect.height * endScale) * 0.5;
-        // Bottom-origin scale compensation so title sits cleanly inside nav bar.
-        dockTop = dockDisplayTop - sourceRect.height * (1 - endScale);
+        const endScaleY = endScale * verticalStretch;
+        // Center-to-center docking target: middle of name aligns to middle of nav links.
+        dockTop =
+          navLinkRect.top +
+          navLinkRect.height * 0.5 -
+          (sourceRect.height * endScaleY) * 0.5;
       }
       dockScrollY = Math.max(1, sourceAbsTop - dockTop);
       topbarSolidScrollY =
@@ -1086,6 +1084,8 @@ if (topbar && mainHeroSplit && heroTitle) {
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
       const navRect = topbar.getBoundingClientRect();
+      const navLinkRow = topbar.querySelector(".topbar__nav-right");
+      const navLinkRect = navLinkRow ? navLinkRow.getBoundingClientRect() : navRect;
       const scalePLinear = clamp(currentScrollY / dockScrollY, 0, 1);
       const scaleP =
         1 -
@@ -1157,12 +1157,13 @@ if (topbar && mainHeroSplit && heroTitle) {
         }
       }
 
-      /* Dock target uses live nav top + animated sheet height so VALERIE stays centered in the collapsing strip (::before), not only in the 70px bar box. */
-      const dockDisplayTop =
-        navRect.top + (layoutHeight - sourceRect.height * scale) * 0.5;
-      const dockTopLive = dockDisplayTop - sourceRect.height * (1 - scale);
+      /* Center-to-center docking: title midpoint tracks nav-link-row midpoint. */
+      const dockTopLive =
+        navLinkRect.top +
+        navLinkRect.height * 0.5 -
+        (sourceRect.height * scaleY) * 0.5;
       const sourceY = sourceRect.top;
-      const y = Math.max(navRect.top + 2, Math.max(dockTopLive, sourceY));
+      const y = Math.max(navRect.top + 2, Math.max(dockTopLive, sourceY)) + HERO_DOCK_Y_OFFSET_PX;
 
       floatingTitle.style.transform = `translate3d(-50%, ${y.toFixed(2)}px, 0) scale(${scaleX.toFixed(4)}, ${scaleY.toFixed(4)})`;
       floatingTitle.style.visibility = "visible";
