@@ -940,13 +940,15 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     /** Delayed scale response for Valerie (no bounce/overshoot). */
     const TITLE_SCALE_LAG = 0.24;
     /** Subtle per-frame scale smoothing while keeping Y fully scroll-driven. */
-    const TITLE_SCALE_BLEND = 0.24;
+    const TITLE_SCALE_BLEND = 0.4;
     /** Reduce baseline compensation strength so scale ease does less vertical travel. */
     const TITLE_Y_SCALE_COMPENSATION_FACTOR = 0.35;
     const TITLE_SPRING_SETTLE_Y = 0.08;
     const TITLE_SPRING_SETTLE_SCALE = 0.0008;
-    /** Smoothly blend from hero-anchored path into dock path over a wider span. */
-    const HERO_DOCK_BLEND_START = 0.68;
+    /** Start docking earlier to avoid a visible pause before nav entry. */
+    const HERO_DOCK_BLEND_START = 0.52;
+    /** Blend band around dock stop to eliminate any remaining handoff jolt. */
+    const HERO_DOCK_TRANSITION_BAND_PX = 26;
     let springRaf = 0;
     let springLastTs = 0;
     let springInit = false;
@@ -1051,7 +1053,6 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
       const navRect = topbar.getBoundingClientRect();
-      const navRightRow = topbar.querySelector(".topbar__nav-right");
       const targetDockFontPx = HERO_DOCK_TARGET_FONT_PT * CSS_PT_TO_PX;
       const sourceFontPx = parseFloat(getComputedStyle(heroTitleLink).fontSize) || targetDockFontPx;
       endScale = clamp(targetDockFontPx / sourceFontPx, 0.08, 0.4);
@@ -1059,15 +1060,10 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       sourceAbsTop = sourceRect.top + currentScrollY;
       sourceRectHeight = sourceRect.height;
       {
-        // Dock to nav-link row center so Valerie stops aligned with the links.
-        const navRowRect = navRightRow ? navRightRow.getBoundingClientRect() : null;
-        const navCenterY = navRowRect
-          ? navRowRect.top + navRowRect.height * 0.5
-          : navRect.top + navRect.height * 0.5;
+        // Dock to the fixed nav-bar center to keep hero text independent from link collapse.
+        const navCenterY = navRect.top + navRect.height * 0.5;
         const heroBottomAbs = mainHeroSplit.getBoundingClientRect().bottom + currentScrollY;
-        const endNavLiftProgress = 1;
-        const endCollapseScale = 1 - endNavLiftProgress * 0.08;
-        const endScaleY = endScale * endCollapseScale * verticalStretch;
+        const endScaleY = endScale * verticalStretch;
         // Solve endpoint scroll so shrink completes when title center aligns with nav-link-row center.
         const endpointScrollY =
           heroBottomAbs -
@@ -1092,7 +1088,6 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
       const navRect = topbar.getBoundingClientRect();
-      const navRightRowLive = topbar.querySelector(".topbar__nav-right");
       const scalePLinear = clamp(currentScrollY / dockScrollY, 0, 1);
       const scaleP =
         1 -
@@ -1117,13 +1112,10 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
         `${(targetHeroBottomGap - HERO_TITLE_BOTTOM_GAP_START_PX).toFixed(2)}px`
       );
       const isSolidNow = topbar.classList.contains("is-solid");
-      const isSpringingIn = document.body.classList.contains("topbar-spring-in");
-      const isSpringingOut = document.body.classList.contains("topbar-spring-out");
       // Keep collapse progress fully scroll-driven for smooth, continuous transitions.
       const effectiveNavCollapseProgress = navLiftProgress;
       const effectiveNavLiftProgress = effectiveNavCollapseProgress;
-      const whiteNavVisibleNow =
-        isSpringingIn || isSpringingOut || effectiveNavCollapseProgress > 0.001;
+      const whiteNavVisibleNow = isSolidNow || effectiveNavCollapseProgress > 0.001;
       whiteNavActiveForColor = whiteNavVisibleNow;
       const scale = 1 + (endScale - 1) * scaleEase;
       const scaleX = scale * horizontalSquish;
@@ -1132,13 +1124,8 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
 
       const heroAnchoredTop =
         heroRect.bottom - targetHeroBottomGap - sourceRect.height * scaleY;
-      /* Stop once centered with nav-link row center; otherwise follow hero-anchored path. */
-      const navRowRectLive = navRightRowLive
-        ? navRightRowLive.getBoundingClientRect()
-        : null;
-      const navDockCenterY = navRowRectLive
-        ? navRowRectLive.top + navRowRectLive.height * 0.5
-        : navRect.top + navRect.height * 0.5;
+      /* Dock to fixed nav-bar center so title is independent from nav-link collapse motion. */
+      const navDockCenterY = navRect.top + navRect.height * 0.5;
       const dockTopLive =
         navDockCenterY -
         (sourceRect.height * scaleY) * 0.5;
@@ -1155,10 +1142,20 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const blendedTop =
         constrainedHeroTop + (dockTopLive - constrainedHeroTop) * dockBlend;
       const y = blendedTop + HERO_DOCK_Y_OFFSET_PX;
-      const heroBoundaryY = clampTopToPeriwinkleEdge(y, scaleY);
+      const clampedToHeroBoundary = clampTopToPeriwinkleEdge(y, scaleY);
+      // Release the hero-edge clamp as we approach nav to prevent a "hold" before docking.
+      const boundaryReleaseLinear = clamp((scaleP - 0.56) / 0.34, 0, 1);
+      const boundaryRelease =
+        boundaryReleaseLinear * boundaryReleaseLinear * (3 - 2 * boundaryReleaseLinear);
+      const heroBoundaryY =
+        clampedToHeroBoundary + (y - clampedToHeroBoundary) * boundaryRelease;
       const dockStopY = dockTopLive + HERO_DOCK_Y_OFFSET_PX;
-      // Hard stop: Valerie can move into dock, but never scroll above nav-link center.
-      const clampedY = Math.max(heroBoundaryY, dockStopY);
+      // Continuous transition around dock stop (no branch snap) for seamless motion.
+      const d = dockStopY - heroBoundaryY;
+      const band = HERO_DOCK_TRANSITION_BAND_PX;
+      const t = clamp((d + band) / (2 * band), 0, 1);
+      const smooth = t * t * (3 - 2 * t);
+      const clampedY = heroBoundaryY + (dockStopY - heroBoundaryY) * smooth;
 
       springTargetY = clampedY;
       springTargetScaleX = scaleX;

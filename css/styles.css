@@ -3191,19 +3191,6 @@ body.page-home .hero-title-float {
   }
 }
 
-body.page-home.topbar-spring-in .hero-title-float {
-  opacity: 1;
-  animation: none;
-}
-
-body.page-home.topbar-spring-out .hero-title-float {
-  transition:
-    color 0.18s ease,
-    opacity 0.18s linear;
-  animation: none;
-  opacity: 1;
-}
-
 body.page-home .hero-follow-image {
   width: 100%;
   margin: 0;
