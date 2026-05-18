@@ -901,15 +901,14 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
       const navRect = topbar.getBoundingClientRect();
-      const navLinkRow = topbar.querySelector(".topbar__nav-right");
-      const navLinkRect = navLinkRow ? navLinkRow.getBoundingClientRect() : navRect;
       const targetDockFontPx = HERO_DOCK_TARGET_FONT_PT * CSS_PT_TO_PX;
       const sourceFontPx = parseFloat(getComputedStyle(heroTitleLink).fontSize) || targetDockFontPx;
       endScale = clamp(targetDockFontPx / sourceFontPx, 0.08, 0.4);
       startTop = sourceRect.top;
       sourceAbsTop = sourceRect.top + currentScrollY;
       {
-        const navCenterY = navLinkRect.top + navLinkRect.height * 0.5;
+        // Fixed docking reference: nav-bar center (decoupled from moving nav-link collapse animation).
+        const navCenterY = navRect.top + navRect.height * 0.5;
         const heroBottomAbs = mainHeroSplit.getBoundingClientRect().bottom + currentScrollY;
         const endNavLiftProgress = 1;
         const endCollapseScale = 1 - endNavLiftProgress * 0.08;
@@ -938,8 +937,6 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
       const navRect = topbar.getBoundingClientRect();
-      const navLinkRow = topbar.querySelector(".topbar__nav-right");
-      const navLinkRect = navLinkRow ? navLinkRow.getBoundingClientRect() : navRect;
       const scalePLinear = clamp(currentScrollY / dockScrollY, 0, 1);
       const scaleP =
         1 -
@@ -971,15 +968,14 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const scaleY = scale * verticalStretch;
       const heroRect = mainHeroSplit.getBoundingClientRect();
 
-      /* Center-to-center docking: title midpoint tracks nav-link-row midpoint. */
-      const dockTopLive =
-        navLinkRect.top +
-        navLinkRect.height * 0.5 -
-        (sourceRect.height * scaleY) * 0.5;
       const heroAnchoredTop =
         heroRect.bottom - targetHeroBottomGap - sourceRect.height * scaleY;
-      const dockProgress = effectiveNavLiftProgress;
-      const shouldDockNow = dockProgress >= 0.98 && !isSpringingOut;
+      /* Stop once centered with nav-bar center; otherwise follow hero-anchored path. */
+      const dockTopLive =
+        navRect.top +
+        navRect.height * 0.5 -
+        (sourceRect.height * scaleY) * 0.5;
+      const shouldDockNow = heroAnchoredTop <= dockTopLive;
       const y = (shouldDockNow ? dockTopLive : heroAnchoredTop) + HERO_DOCK_Y_OFFSET_PX;
 
       floatingTitle.style.transform = `translate3d(-50%, ${y.toFixed(2)}px, 0) scale(${scaleX.toFixed(4)}, ${scaleY.toFixed(4)})`;
@@ -998,10 +994,15 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
         "--hero-nav-lift-progress",
         effectiveNavLiftProgress.toFixed(4)
       );
-      // Keep black only at the final centered dock so grow-out stays white.
-      const wantsDarkText = shouldDockNow;
+      const titleRect = floatingTitle.getBoundingClientRect();
+      const overlapsNav =
+        titleRect.bottom > navRect.top &&
+        titleRect.top < navRect.bottom &&
+        titleRect.right > navRect.left &&
+        titleRect.left < navRect.right;
+      const wantsDarkText = overlapsNav;
       floatingTitle.classList.toggle("is-dark", wantsDarkText);
-      floatingTitle.classList.toggle("is-hidden", !!(nav && nav.classList.contains("is-open")));
+      floatingTitle.classList.remove("is-hidden");
     };
 
     const syncFloatingTitle = () => {
