@@ -10,59 +10,11 @@ function layoutViewportWidthPx() {
   return Math.max(window.innerWidth, floor);
 }
 
-/** Matches css/styles.css spring-in sheet animation: topbarWhiteSheetShrinkIntoBar 0.495s cubic-bezier(0.37, 0, 0.21, 1). */
-const SPRING_IN_SHEET_DURATION_MS = 495;
-
-/** Solve Y at X for cubic-bezier (through P1=(x1,y1), P2=(x2,y2)); used as CSS animation-timing-function. */
-function cubicBezierYAtX(x, x1, y1, x2, y2) {
-  if (x <= 0) return 0;
-  if (x >= 1) return 1;
-  let uLo = 0;
-  let uHi = 1;
-  for (let i = 0; i < 16; i++) {
-    const uMid = (uLo + uHi) * 0.5;
-    const xMid =
-      3 * (1 - uMid) * (1 - uMid) * uMid * x1 +
-      3 * (1 - uMid) * uMid * uMid * x2 +
-      uMid * uMid * uMid;
-    if (xMid < x) uLo = uMid;
-    else uHi = uMid;
-  }
-  const u = (uLo + uHi) * 0.5;
-  return (
-    3 * (1 - u) * (1 - u) * u * y1 +
-    3 * (1 - u) * u * u * y2 +
-    u * u * u
-  );
-}
-
-/** Collapse progress 0→1 with 6% hold (keyframes 0%/6%), same easing as the white sheet. */
-function springInSheetCollapseProgress(elapsedMs) {
-  const Lin = Math.min(1, elapsedMs / SPRING_IN_SHEET_DURATION_MS);
-  if (Lin <= 0.06) return 0;
-  const seg = (Lin - 0.06) / (1 - 0.06);
-  return cubicBezierYAtX(seg, 0.37, 0, 0.21, 1);
-}
-
-/** Matches topbarWhiteSheetExpandMirrorFadeOut: 0.236s cubic-bezier(0.4, 0, 0.22, 1). */
-const SPRING_OUT_SHEET_DURATION_MS = 236;
-
-function springOutSheetExpandProgress(elapsedMs) {
-  const Lin = Math.min(1, elapsedMs / SPRING_OUT_SHEET_DURATION_MS);
-  if (Lin <= 0.06) return 0;
-  const seg = (Lin - 0.06) / (1 - 0.06);
-  return cubicBezierYAtX(seg, 0.4, 0, 0.22, 1);
-}
-
 const yearEl = document.getElementById("year");
 if (yearEl) yearEl.textContent = new Date().getFullYear();
 
 /** Home hero: floating title layout runs before nav reads geometry (same scroll frame). */
 let syncFloatingTitleImmediate = null;
-/** While topbar-spring-in runs, vertical centering uses ::before sheet height (not just nav bar box). */
-let springInSheetAnimStartMs = null;
-/** Same for scroll-up spring-out (sheet grows away from the bar). */
-let springOutSheetAnimStartMs = null;
 
 const getSessionStorageSafe = () => {
   try {
@@ -757,7 +709,7 @@ const mainHeroSplit = document.querySelector(
 );
 const preRect = document.querySelector(".contact__pre-rect");
 const heroTitle = document.getElementById("heroTitle");
-let topbarSolidScrollY = null;
+const ENABLE_HERO_TITLE_SCROLL_ANIMATION = true;
 const HERO_TEXT_DARK_PROGRESS = 0.9;
 const HERO_NAV_EXTRA_SCROLL_PX = 20;
 
@@ -768,18 +720,13 @@ if (topbar && mainHeroSplit) {
   let heroNavRafId = null;
   let lastScrollY = window.scrollY || window.pageYOffset || 0;
   let prevHasPassedHero = topbar.classList.contains("is-solid");
-  /* Once home nav turns white, keep it sticky/solid for the rest of the page scroll. */
-  let keepHomeNavSolid = prevHasPassedHero;
-  /** After fading out on scroll-down because title touched the nav bottom, block re-solid until title drops. */
-  let solidExitByBottomTouch = false;
   let topbarSpringTimer = null;
   let heroFoucPendingCleared = false;
-  /** Wider exit than enter so fast scroll does not oscillate `is-solid` / spring at the band edge. */
-  const LINK_BAND_ENTER_SLACK_PX = 2;
+  /** Center-band hysteresis: enter at center match, exit with slack to avoid flicker. */
+  const LINK_BAND_ENTER_SLACK_PX = 0;
   const LINK_BAND_EXIT_SLACK_PX = 22;
   const springInClass = "topbar-spring-in";
   const springOutClass = "topbar-spring-out";
-
   document.body.classList.remove(springInClass);
   document.body.classList.remove(springOutClass);
 
@@ -789,7 +736,6 @@ if (topbar && mainHeroSplit) {
     }
     const currentScrollY = window.scrollY || window.pageYOffset || 0;
     const scrollingUp = currentScrollY < lastScrollY - 0.5;
-    const scrollingDown = currentScrollY > lastScrollY + 0.5;
     const navHeight = topbar.offsetHeight || 0;
     const heroRect = mainHeroSplit.getBoundingClientRect();
     const HERO_NAV_ENTER_SOLID_OFFSET_UP_PX = -52;
@@ -799,8 +745,7 @@ if (topbar && mainHeroSplit) {
     let hasPassedHero = prevHasPassedHero;
     /** True when the name has cleared the nav link band again (hero overlap) — kills sticky solid + spring lock. */
     let titleBackInHero = false;
-    /* Solid nav when the top of the name (floating clone if ready) reaches the bottom of the
-     * right-hand link row — Schmitt band so scroll speed does not matter. */
+    /* Solid nav when the midpoint of the name reaches the midpoint of the nav-link row. */
     const floatTitleReady = document.querySelector(
       ".hero-title-float.is-layout-ready"
     );
@@ -811,93 +756,19 @@ if (topbar && mainHeroSplit) {
     if (titleForAlign && navRightRow) {
       const titleRect = titleForAlign.getBoundingClientRect();
       const rowRect = navRightRow.getBoundingClientRect();
-      const navRect = topbar.getBoundingClientRect();
-      const titleTop = titleRect.top;
-      const rowBottom = rowRect.bottom;
-      const TOUCH_NAV_BOTTOM_SLACK_PX = 0;
-      const CLEAR_TOUCH_BELOW_NAV_BOTTOM_PX = 10;
+      const titleCenterY = titleRect.top + titleRect.height * 0.5;
+      const rowCenterY = rowRect.top + rowRect.height * 0.5;
       if (prevHasPassedHero) {
-        if (
-          scrollingDown &&
-          titleRect.bottom <= navRect.bottom + TOUCH_NAV_BOTTOM_SLACK_PX
-        ) {
-          hasPassedHero = false;
-          solidExitByBottomTouch = true;
-        } else if (titleTop > rowBottom + LINK_BAND_EXIT_SLACK_PX) {
-          hasPassedHero = false;
-          solidExitByBottomTouch = false;
-        }
-      } else if (
-        !solidExitByBottomTouch &&
-        titleTop <= rowBottom + LINK_BAND_ENTER_SLACK_PX
-      ) {
-        hasPassedHero = true;
-      } else if (solidExitByBottomTouch) {
-        if (titleTop > rowBottom + LINK_BAND_EXIT_SLACK_PX) {
-          solidExitByBottomTouch = false;
-        } else if (
-          titleRect.bottom > navRect.bottom + CLEAR_TOUCH_BELOW_NAV_BOTTOM_PX
-        ) {
-          solidExitByBottomTouch = false;
-          if (titleTop <= rowBottom + LINK_BAND_ENTER_SLACK_PX) hasPassedHero = true;
-        }
+        hasPassedHero = titleCenterY <= rowCenterY + LINK_BAND_EXIT_SLACK_PX;
+      } else {
+        hasPassedHero = titleCenterY <= rowCenterY + LINK_BAND_ENTER_SLACK_PX;
       }
-      titleBackInHero = titleTop > rowBottom + LINK_BAND_EXIT_SLACK_PX;
-    } else if (Number.isFinite(topbarSolidScrollY)) {
-      const ENTER_HYSTERESIS_PX = 0;
-      const EXIT_HYSTERESIS_PX = 40;
-      if (prevHasPassedHero) {
-        if (currentScrollY < topbarSolidScrollY - EXIT_HYSTERESIS_PX) hasPassedHero = false;
-      } else if (currentScrollY >= topbarSolidScrollY + ENTER_HYSTERESIS_PX) {
-        hasPassedHero = true;
-      }
-    } else if (prevHasPassedHero) {
-      const exitOffset = scrollingUp
-        ? HERO_NAV_EXIT_SOLID_OFFSET_UP_PX
-        : HERO_NAV_EXIT_SOLID_OFFSET_DOWN_PX;
-      if (heroRect.bottom > navHeight + exitOffset) hasPassedHero = false;
-    } else {
-      const enterOffset = scrollingUp
-        ? HERO_NAV_ENTER_SOLID_OFFSET_UP_PX
-        : HERO_NAV_ENTER_SOLID_OFFSET_DOWN_PX;
-      if (heroRect.bottom <= navHeight + enterOffset) hasPassedHero = true;
+      titleBackInHero = titleCenterY > rowCenterY + LINK_BAND_EXIT_SLACK_PX;
     }
 
-    /* Fast scroll back into hero: drop sticky spring-in so the white bar does not linger.
-     * Do NOT strip topbar-spring-out here — while titleBackInHero is true every subsequent frame
-     * would remove it and kill the scroll-up expand/fade CSS before it can run (timer clears it). */
+    // If title is back in hero band, always unsolid.
     if (titleBackInHero) {
       hasPassedHero = false;
-      keepHomeNavSolid = false;
-      if (document.body.classList.contains(springInClass)) {
-        if (topbarSpringTimer) {
-          window.clearTimeout(topbarSpringTimer);
-          topbarSpringTimer = null;
-        }
-        document.body.classList.remove(springInClass);
-      }
-    } else {
-      if (document.body.classList.contains(springInClass)) {
-        hasPassedHero = true;
-      } else if (document.body.classList.contains(springOutClass)) {
-        hasPassedHero = false;
-      }
-    }
-
-    if (hasPassedHero) keepHomeNavSolid = true;
-    if (keepHomeNavSolid && scrollingUp) {
-      const heroRugImg = mainHeroSplit.querySelector(".split__rugs img, .split__rug img");
-      const heroImageBottomVp =
-        heroRugImg && heroRugImg.getBoundingClientRect
-          ? heroRugImg.getBoundingClientRect().bottom
-          : heroRect.bottom;
-      const RELEASE_SOLID_AT_HERO_BOTTOM_PX = 2;
-      if (heroImageBottomVp > navHeight + RELEASE_SOLID_AT_HERO_BOTTOM_PX) {
-        keepHomeNavSolid = false;
-      }
-    }
-    if (keepHomeNavSolid && !titleBackInHero) {
-      hasPassedHero = true;
     }
 
     if (hasPassedHero !== prevHasPassedHero) {
@@ -905,67 +776,44 @@ if (topbar && mainHeroSplit) {
         window.clearTimeout(topbarSpringTimer);
         topbarSpringTimer = null;
       }
-      const navAlreadyHydrated = document.body.classList.contains("nav-scroll-hydrated");
-      if (navAlreadyHydrated) {
-        const navMeas = topbar.offsetHeight || 70;
-        const HERO_SHEET_OFFSET_BELOW_IMAGE_TOP_PX = 6;
-        const HERO_SPRING_FADE_LINE_OFFSET_ABOVE_IMAGE_BOTTOM_PX = 52;
-        const SHEET_MIN_TRAVEL_ABOVE_NAV_PX = 36;
-        const imageLinePx = Math.round(heroRect.top + HERO_SHEET_OFFSET_BELOW_IMAGE_TOP_PX);
-        const sheetBottomPx = Math.max(
-          imageLinePx,
+      const navMeas = topbar.offsetHeight || 70;
+      const SHEET_MIN_TRAVEL_ABOVE_NAV_PX = 30;
+      if (hasPassedHero) {
+        const sheetStartPx = Math.max(
+          Math.round(heroRect.top + 6),
           navMeas + SHEET_MIN_TRAVEL_ABOVE_NAV_PX
         );
-        const heroRugImg = mainHeroSplit.querySelector(
-          ".split__rugs img, .split__rug img"
+        document.documentElement.style.setProperty(
+          "--topbar-spring-start-height",
+          `${sheetStartPx}px`
         );
-        const imageBottomVp =
-          heroRugImg && heroRugImg.getBoundingClientRect
-            ? heroRugImg.getBoundingClientRect().bottom
-            : heroRect.bottom;
-        const fadeLineFromImageBottomPx = Math.round(
-          imageBottomVp - HERO_SPRING_FADE_LINE_OFFSET_ABOVE_IMAGE_BOTTOM_PX
-        );
-        if (hasPassedHero) {
-          document.documentElement.style.removeProperty("--topbar-collapse-from-height");
-          document.documentElement.style.setProperty(
-            "--topbar-spring-start-height",
-            `${sheetBottomPx}px`
-          );
-          document.body.classList.remove(springOutClass);
-          document.body.classList.add(springInClass);
-        } else {
-          const collapseFromPx = Math.max(
-            fadeLineFromImageBottomPx,
-            navMeas + SHEET_MIN_TRAVEL_ABOVE_NAV_PX
-          );
-          document.documentElement.style.setProperty(
-            "--topbar-collapse-from-height",
-            `${collapseFromPx}px`
-          );
-          document.documentElement.style.removeProperty("--topbar-spring-start-height");
-          topbar.classList.toggle("is-solid", hasPassedHero);
-          document.body.classList.remove(springInClass);
-          document.body.classList.add(springOutClass);
-        }
+        document.documentElement.style.removeProperty("--topbar-collapse-from-height");
+        document.body.classList.remove(springOutClass);
+        document.body.classList.add(springInClass);
         topbarSpringTimer = window.setTimeout(() => {
           document.body.classList.remove(springInClass);
+          topbarSpringTimer = null;
+        }, 480);
+      } else {
+        const collapseFromPx = Math.max(
+          Math.round(heroRect.bottom - 52),
+          navMeas + SHEET_MIN_TRAVEL_ABOVE_NAV_PX
+        );
+        document.documentElement.style.setProperty(
+          "--topbar-collapse-from-height",
+          `${collapseFromPx}px`
+        );
+        document.documentElement.style.removeProperty("--topbar-spring-start-height");
+        document.body.classList.remove(springInClass);
+        document.body.classList.add(springOutClass);
+        topbarSpringTimer = window.setTimeout(() => {
           document.body.classList.remove(springOutClass);
           topbarSpringTimer = null;
-        }, hasPassedHero ? 900 : 415);
-      } else {
-        document.documentElement.style.removeProperty("--topbar-spring-start-height");
-        document.documentElement.style.removeProperty("--topbar-collapse-from-height");
+        }, 320);
       }
     }
 
-    const collapseUsedEarlySolidToggle =
-      hasPassedHero !== prevHasPassedHero &&
-      document.body.classList.contains("nav-scroll-hydrated") &&
-      !hasPassedHero;
-    if (!collapseUsedEarlySolidToggle) {
-      topbar.classList.toggle("is-solid", hasPassedHero);
-    }
+    topbar.classList.toggle("is-solid", hasPassedHero);
 
     if (!document.body.classList.contains("nav-scroll-hydrated")) {
       document.body.classList.add("nav-scroll-hydrated");
@@ -1002,10 +850,12 @@ if (topbar && mainHeroSplit) {
   requestHeroNavSync();
 }
 
-if (topbar && mainHeroSplit && heroTitle) {
+if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) {
   const heroTitleLink = heroTitle.querySelector(".text-block__title-home");
 
   if (heroTitleLink) {
+    // Ensure only one floating clone ever drives nav/title motion.
+    document.querySelectorAll(".hero-title-float").forEach((node) => node.remove());
     const floatingTitle = document.createElement("a");
     floatingTitle.className = "hero-title-float";
     /* Nav-bar clone: main homepage (matches index hero home link). */
@@ -1028,14 +878,16 @@ if (topbar && mainHeroSplit && heroTitle) {
     let resizeRaf = 0;
     const horizontalSquish = 0.97;
     const verticalStretch = 1.09;
-    /** < 1 tightens the final docked size (more intense shrink). */
-    const HERO_ENDSCALE_INTENSITY = 0.92;
-    /** Max extra space (px) between title baseline area and bottom of hero image as shrink completes. */
-    const HERO_TITLE_BOTTOM_LIFT_MAX_PX = 48;
-    /** >1 makes scroll-driven shrink steeper (more size change per px early). 1.25 ≈ +25% steepness. */
-    const HERO_TITLE_SCALE_SCROLL_STEEPNESS = 1.25;
-    /** Widen dock target so fully shrunk text reads ~this many pt larger (CSS pt → px at 96dpi). */
-    const HERO_DOCK_FINAL_SIZE_BOOST_PT = 5;
+    /** Target docked font size for Valerie text (pt). */
+    const HERO_DOCK_TARGET_FONT_PT = 25;
+    /** Start from the current hero placement and keep that gap while scaling toward nav dock. */
+    const HERO_TITLE_BOTTOM_GAP_START_PX = 20;
+    const HERO_TITLE_BOTTOM_GAP_END_PX = 30;
+    /** Lower value keeps title larger for longer, closer to reference motion. */
+    const HERO_TITLE_SCALE_SCROLL_STEEPNESS = 0.65;
+    /** Home nav collapse/lift should be quick and scroll-driven (not timer-driven). */
+    const HERO_NAV_SCROLL_COLLAPSE_START = 0.68;
+    const HERO_NAV_SCROLL_COLLAPSE_WINDOW = 0.26;
     /** Fine tune docked title vertical position in navbar (positive moves down). */
     const HERO_DOCK_Y_OFFSET_PX = 0;
     const CSS_PT_TO_PX = 96 / 72;
@@ -1051,27 +903,29 @@ if (topbar && mainHeroSplit && heroTitle) {
       const navRect = topbar.getBoundingClientRect();
       const navLinkRow = topbar.querySelector(".topbar__nav-right");
       const navLinkRect = navLinkRow ? navLinkRow.getBoundingClientRect() : navRect;
-      const sourceWidth = Math.max(sourceRect.width, 1);
-      const desiredDockWidth =
-        Math.min(layoutViewportWidthPx() * 0.28, 290) +
-        HERO_DOCK_FINAL_SIZE_BOOST_PT * CSS_PT_TO_PX;
-
-      endScale = clamp(desiredDockWidth / sourceWidth, 0.12, 0.4);
-      endScale = clamp(endScale * HERO_ENDSCALE_INTENSITY, 0.1, 0.38);
+      const targetDockFontPx = HERO_DOCK_TARGET_FONT_PT * CSS_PT_TO_PX;
+      const sourceFontPx = parseFloat(getComputedStyle(heroTitleLink).fontSize) || targetDockFontPx;
+      endScale = clamp(targetDockFontPx / sourceFontPx, 0.08, 0.4);
       startTop = sourceRect.top;
       sourceAbsTop = sourceRect.top + currentScrollY;
       {
-        const endScaleY = endScale * verticalStretch;
-        // Center-to-center docking target: middle of name aligns to middle of nav links.
+        const navCenterY = navLinkRect.top + navLinkRect.height * 0.5;
+        const heroBottomAbs = mainHeroSplit.getBoundingClientRect().bottom + currentScrollY;
+        const endNavLiftProgress = 1;
+        const endCollapseScale = 1 - endNavLiftProgress * 0.08;
+        const endScaleY = endScale * endCollapseScale * verticalStretch;
+        // Solve endpoint scroll so shrink completes when title center aligns with nav-link-row center.
+        const endpointScrollY =
+          heroBottomAbs -
+          HERO_TITLE_BOTTOM_GAP_END_PX -
+          sourceRect.height * endScaleY * 0.5 +
+          HERO_DOCK_Y_OFFSET_PX -
+          navCenterY;
         dockTop =
-          navLinkRect.top +
-          navLinkRect.height * 0.5 -
-          (sourceRect.height * endScaleY) * 0.5;
+          navCenterY -
+          sourceRect.height * endScaleY * 0.5;
+        dockScrollY = Math.max(1, endpointScrollY);
       }
-      dockScrollY = Math.max(1, sourceAbsTop - dockTop);
-      topbarSolidScrollY =
-        dockScrollY * HERO_TEXT_DARK_PROGRESS + HERO_NAV_EXTRA_SCROLL_PX;
-
       /* Stay hidden until syncFloatingTitle applies transform (avoid flash at top:0). */
     };
 
@@ -1093,77 +947,40 @@ if (topbar && mainHeroSplit && heroTitle) {
           1 - scalePLinear,
           HERO_TITLE_SCALE_SCROLL_STEEPNESS
         );
-      topbar.style.setProperty("--hero-nav-collapse-progress", scaleP.toFixed(4));
+      const navLiftLinear = clamp(
+        (scaleP - HERO_NAV_SCROLL_COLLAPSE_START) / HERO_NAV_SCROLL_COLLAPSE_WINDOW,
+        0,
+        1
+      );
+      const navLiftProgress = 1 - Math.pow(1 - navLiftLinear, 1.9);
+      const gapEase = scaleP;
+      const targetHeroBottomGap =
+        HERO_TITLE_BOTTOM_GAP_START_PX +
+        (HERO_TITLE_BOTTOM_GAP_END_PX - HERO_TITLE_BOTTOM_GAP_START_PX) * gapEase;
       heroTitle.style.setProperty(
         "--hero-title-bottom-lift",
-        `${(scaleP * HERO_TITLE_BOTTOM_LIFT_MAX_PX).toFixed(2)}px`
+        `${(targetHeroBottomGap - HERO_TITLE_BOTTOM_GAP_START_PX).toFixed(2)}px`
       );
+      const isSolidNow = topbar.classList.contains("is-solid");
+      const isSpringingOut = document.body.classList.contains("topbar-spring-out");
+      const navStateActive = isSolidNow || isSpringingOut;
+      const effectiveNavCollapseProgress = navStateActive ? navLiftProgress : 0;
+      const effectiveNavLiftProgress = effectiveNavCollapseProgress;
       const scale = 1 + (endScale - 1) * scaleP;
       const scaleX = scale * horizontalSquish;
       const scaleY = scale * verticalStretch;
-
-      const springInActive =
-        document.body.classList.contains("topbar-spring-in") &&
-        topbar.classList.contains("is-solid");
-      const springOutActive =
-        document.body.classList.contains("topbar-spring-out") &&
-        !topbar.classList.contains("is-solid");
-
-      if (springInActive) {
-        springOutSheetAnimStartMs = null;
-        if (springInSheetAnimStartMs == null) {
-          springInSheetAnimStartMs = performance.now();
-        }
-      } else if (springOutActive) {
-        springInSheetAnimStartMs = null;
-        if (springOutSheetAnimStartMs == null) {
-          springOutSheetAnimStartMs = performance.now();
-        }
-      } else {
-        springInSheetAnimStartMs = null;
-        springOutSheetAnimStartMs = null;
-      }
-
-      let layoutHeight = navRect.height;
-      if (springInActive && springInSheetAnimStartMs != null) {
-        const raw =
-          document.documentElement.style.getPropertyValue(
-            "--topbar-spring-start-height"
-          ) ||
-          getComputedStyle(document.documentElement).getPropertyValue(
-            "--topbar-spring-start-height"
-          );
-        const startH = parseFloat(String(raw).trim());
-        const navH = navRect.height;
-        if (Number.isFinite(startH) && startH > 0 && navH > 0) {
-          const elapsed = performance.now() - springInSheetAnimStartMs;
-          const prog = springInSheetCollapseProgress(elapsed);
-          layoutHeight = startH + (navH - startH) * prog;
-        }
-      } else if (springOutActive && springOutSheetAnimStartMs != null) {
-        const raw =
-          document.documentElement.style.getPropertyValue(
-            "--topbar-collapse-from-height"
-          ) ||
-          getComputedStyle(document.documentElement).getPropertyValue(
-            "--topbar-collapse-from-height"
-          );
-        const endH = parseFloat(String(raw).trim());
-        const navH = navRect.height;
-        if (Number.isFinite(endH) && endH > 0 && navH > 0) {
-          const elapsed = performance.now() - springOutSheetAnimStartMs;
-          const prog = springOutSheetExpandProgress(elapsed);
-          layoutHeight = navH + (endH - navH) * prog;
-        }
-      }
+      const heroRect = mainHeroSplit.getBoundingClientRect();
 
       /* Center-to-center docking: title midpoint tracks nav-link-row midpoint. */
       const dockTopLive =
         navLinkRect.top +
         navLinkRect.height * 0.5 -
         (sourceRect.height * scaleY) * 0.5;
-      const sourceY = sourceRect.top;
-      const y = Math.max(navRect.top + 2, Math.max(dockTopLive, sourceY)) + HERO_DOCK_Y_OFFSET_PX;
+      const heroAnchoredTop =
+        heroRect.bottom - targetHeroBottomGap - sourceRect.height * scaleY;
+      const dockProgress = effectiveNavLiftProgress;
+      const shouldDockNow = dockProgress >= 0.98 && !isSpringingOut;
+      const y = (shouldDockNow ? dockTopLive : heroAnchoredTop) + HERO_DOCK_Y_OFFSET_PX;
 
       floatingTitle.style.transform = `translate3d(-50%, ${y.toFixed(2)}px, 0) scale(${scaleX.toFixed(4)}, ${scaleY.toFixed(4)})`;
       floatingTitle.style.visibility = "visible";
@@ -1173,15 +990,16 @@ if (topbar && mainHeroSplit && heroTitle) {
       floatingTitle.style.removeProperty("opacity");
       floatingTitle.style.removeProperty("visibility");
 
-      const titleRect = floatingTitle.getBoundingClientRect();
-      const sheetBottom = navRect.top + layoutHeight;
-      const overlapsNav =
-        titleRect.bottom > navRect.top &&
-        titleRect.top < sheetBottom &&
-        titleRect.right > navRect.left &&
-        titleRect.left < navRect.right;
-      const wantsDarkText =
-        topbar.classList.contains("is-solid") || overlapsNav;
+      topbar.style.setProperty(
+        "--hero-nav-collapse-progress",
+        effectiveNavCollapseProgress.toFixed(4)
+      );
+      topbar.style.setProperty(
+        "--hero-nav-lift-progress",
+        effectiveNavLiftProgress.toFixed(4)
+      );
+      // Keep black only at the final centered dock so grow-out stays white.
+      const wantsDarkText = shouldDockNow;
       floatingTitle.classList.toggle("is-dark", wantsDarkText);
       floatingTitle.classList.toggle("is-hidden", !!(nav && nav.classList.contains("is-open")));
     };
@@ -1671,6 +1489,61 @@ if (aboutBarWrap && aboutBarImg) {
   window.addEventListener("scroll", requestParallaxUpdate, { passive: true });
   window.addEventListener("resize", requestParallaxUpdate);
   requestParallaxUpdate();
+}
+
+const collectionRectGroups = Array.from(
+  document.querySelectorAll(
+    ".hero-traditional-layout .hero-square-carousel__kees-rects, .hero-square-carousel-collections .hero-square-carousel__kees-rects"
+  )
+);
+
+if (collectionRectGroups.length) {
+  let ticking = false;
+  let offsets = collectionRectGroups.map(() => 0);
+  const maxTravelPx = 54;
+
+  const groupFactor = (i) => {
+    const base = 0.67 + (i % 4) * 0.06;
+    return Math.min(0.9, base);
+  };
+
+  const update = () => {
+    const viewportCenter = window.innerHeight * 0.5;
+    let stillMoving = false;
+
+    offsets = offsets.map((current, i) => {
+      const groupRect = collectionRectGroups[i].getBoundingClientRect();
+      const groupCenter = groupRect.top + groupRect.height * 0.5;
+      const delta = viewportCenter - groupCenter;
+      const target = Math.max(
+        -maxTravelPx,
+        Math.min(maxTravelPx, delta * (1 - groupFactor(i)))
+      );
+      const next = current + (target - current) * 0.11;
+      if (Math.abs(target - next) > 0.08) stillMoving = true;
+      return next;
+    });
+
+    collectionRectGroups.forEach((group, i) => {
+      group.style.transform = `translate3d(0, ${offsets[i].toFixed(2)}px, 0)`;
+    });
+
+    if (stillMoving) {
+      window.requestAnimationFrame(update);
+    } else {
+      ticking = false;
+    }
+  };
+
+  const requestUpdate = () => {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(update);
+  };
+
+  window.addEventListener("scroll", requestUpdate, { passive: true });
+  window.addEventListener("resize", requestUpdate);
+  requestUpdate();
 }
 
 if (contactSection && contactEmailPanel) {
