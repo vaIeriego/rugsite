@@ -11,7 +11,7 @@
   --clr-black:    #0d0d0d;
   --clr-white:    #ffffff;
   --clr-accent:   #7eb8d4;   /* light blue — nav-line hover */
-  --clr-bg:       #F8F5EC;   /* slightly whiter ivory */
+  --clr-bg:       #FAF9F6;
   --clr-muted:    #7a7a6e;
   --clr-border:   rgba(255,255,255,0.18);
   --max-width:    1100px;
@@ -2729,9 +2729,9 @@ body.olive-follow-active .contact__split-right {
 }
 
 .hero-title-float.is-hidden {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .hero-square-carousel {
@@ -2945,6 +2945,7 @@ body.page-home .text-block__title {
 }
 
 body.page-home .hero-title-float {
+  z-index: 220;
   font-size: calc(clamp(3.4rem, 9.1vw, 8.4rem) + 20px + 6pt + 3px);
   line-height: 0.9;
   letter-spacing: 0.03em;
@@ -2988,8 +2989,9 @@ body.page-home .topbar::before {
   opacity: var(--hero-nav-lift-progress);
   top: 0;
   height: 100%;
-  transition: opacity 0.5s ease;
+  transition: opacity 0.28s ease;
   transform-origin: top center;
+  transform: scaleY(1);
 }
 
 body.page-home .topbar__nav-left,
@@ -3018,7 +3020,7 @@ body.page-home .topbar.is-solid .topbar__nav-right {
   0% {
     transform: translateY(30px);
   }
-  34% {
+  14% {
     transform: translateY(30px);
   }
   100% {
@@ -3030,7 +3032,7 @@ body.page-home .topbar.is-solid .topbar__nav-right {
   0% {
     transform: translateY(0);
   }
-  6% {
+  2% {
     transform: translateY(0);
   }
   100% {
@@ -3041,31 +3043,30 @@ body.page-home .topbar.is-solid .topbar__nav-right {
 body.page-home.topbar-spring-in .topbar__nav-left,
 body.page-home.topbar-spring-in .topbar__nav-right {
   transition: none;
-  animation: topbarNavLinksRiseIn 0.36s cubic-bezier(0.37, 0, 0.21, 1) both;
+  animation: topbarNavLinksRiseIn 0.26s cubic-bezier(0.28, 0, 0.2, 1) both;
 }
 
 @keyframes topbarWhiteSheetShrinkIntoBarHome {
   0% {
-    top: 0;
-    height: calc(100% + 67px);
-    opacity: 1;
+    transform: scaleY(1.67);
+    opacity: 0.52;
     animation-timing-function: cubic-bezier(0.37, 0, 0.21, 1);
   }
-  14% {
-    top: 0;
-    height: calc(100% + 67px);
-    opacity: 1;
+  10% {
+    transform: scaleY(1.67);
+    opacity: 0.82;
   }
   100% {
-    top: 0;
-    height: 100%;
+    transform: scaleY(1);
     opacity: 1;
   }
 }
 
 body.page-home.topbar-spring-in .topbar::before {
   opacity: 1;
-  animation: topbarWhiteSheetShrinkIntoBarHome 0.45s both;
+  transition: none;
+  will-change: transform, opacity;
+  animation: topbarWhiteSheetShrinkIntoBarHome 0.44s both;
 }
 
 body.page-home.topbar-spring-in .topbar.is-solid {
@@ -3076,12 +3077,12 @@ body.page-home.topbar-spring-in .topbar.is-solid {
 body.page-home.topbar-spring-out .topbar__nav-left,
 body.page-home.topbar-spring-out .topbar__nav-right {
   transition: none;
-  animation: topbarNavLinksRiseOut 0.26s cubic-bezier(0.4, 0, 0.22, 1) both;
+  animation: topbarNavLinksRiseOut 0.2s cubic-bezier(0.34, 0, 0.2, 1) both;
 }
 
 body.page-home.topbar-spring-out .topbar::before {
   opacity: 1;
-  animation: topbarWhiteSheetExpandMirrorFadeOut 0.26s both;
+  animation: topbarWhiteSheetExpandMirrorFadeOut 0.2s both;
 }
 
 body.page-home .topbar .topbar__inquire {
@@ -3169,27 +3170,38 @@ body.page-home .topbar.is-solid .hamburger__line {
 
 body.page-home.topbar-spring-in .topbar .topbar__inquire,
 body.page-home.topbar-spring-in .topbar .hamburger__line {
-  animation: navInkIn 0.62s ease both;
+  animation: navInkIn 0.34s ease both;
 }
 
 body.page-home.topbar-spring-out .topbar .topbar__inquire,
 body.page-home.topbar-spring-out .topbar .hamburger__line {
-  animation: navInkOut 0.24s ease both;
+  animation: navInkOut 0.18s ease both;
 }
 
 body.page-home .hero-title-float {
   transition: color 0.06s ease-out, opacity 0.26s ease;
 }
 
+@keyframes heroTitleFloatFadeIn {
+  0% {
+    opacity: 0.76;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
 body.page-home.topbar-spring-in .hero-title-float {
   opacity: 1;
+  animation: none;
 }
 
 body.page-home.topbar-spring-out .hero-title-float {
   transition:
     color 0.18s ease,
-    opacity 0.26s ease;
-  opacity: calc(0.76 + var(--hero-nav-collapse-progress) * 0.24);
+    opacity 0.18s linear;
+  animation: none;
+  opacity: 1;
 }
 
 body.page-home .hero-follow-image {
@@ -3199,7 +3211,7 @@ body.page-home .hero-follow-image {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: clamp(58px, 7vw, 86px) 0 clamp(56px, 7vw, 94px);
+  padding: calc(clamp(58px, 7vw, 86px) + 25px) 0 clamp(56px, 7vw, 94px);
 }
 
 body.page-home .hero-follow-image__mark {

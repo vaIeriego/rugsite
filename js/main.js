@@ -212,8 +212,15 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
   const AUTO_SLIDE_DURATION_MS = 1000;
   /** Arrow clicks: slower than auto-start tweak; paired with ease-in-out-quart below. */
   const MANUAL_SLIDE_DURATION_MS = 1080;
-  /* Idle after an animation finishes before the next auto-slide. */
-  const AUTO_STEP_MS = AUTO_SLIDE_DURATION_MS + 2600;
+  /* Consistent cadence: advance one slot every 4 seconds. */
+  const AUTO_STEP_MS = 4000;
+  /** Keep perceived speed consistent across viewport sizes (slot width changes with layout). */
+  const BASELINE_SLOT_STEP_PX = 300;
+  const getDurationForStep = (baseDurationMs, stepPx) => {
+    const safeStep = Math.max(1, stepPx || BASELINE_SLOT_STEP_PX);
+    const scaled = baseDurationMs * (safeStep / BASELINE_SLOT_STEP_PX);
+    return clamp(Math.round(scaled), 760, 1550);
+  };
   const isAnimatingHeroSquares = () => heroSquareAnimating;
 
   const syncArrowState = () => {
@@ -284,11 +291,17 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
 
   const restartAutoStepTimer = () => {
     if (autoStepTimer) {
-      window.clearInterval(autoStepTimer);
+      window.clearTimeout(autoStepTimer);
       autoStepTimer = null;
     }
     if (heroSquarePointerOverImages) return;
-    autoStepTimer = window.setInterval(autoStepOnce, AUTO_STEP_MS);
+    autoStepTimer = window.setTimeout(function tickAutoStep() {
+      autoStepTimer = null;
+      autoStepOnce();
+      if (!heroSquarePointerOverImages) {
+        autoStepTimer = window.setTimeout(tickAutoStep, AUTO_STEP_MS);
+      }
+    }, AUTO_STEP_MS);
   };
 
   const getStep = () => {
@@ -331,7 +344,8 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     const step = getStep();
     if (step <= 1) return;
     // One slot per click; duration + quart easing give an eased, readable glide.
-    const started = animateBy(direction * step, MANUAL_SLIDE_DURATION_MS, easeInOutQuart);
+    const durationMs = getDurationForStep(MANUAL_SLIDE_DURATION_MS, step);
+    const started = animateBy(direction * step, durationMs, easeInOutQuart);
     if (!started) return;
     restartAutoStepTimer();
   };
@@ -381,12 +395,18 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
   });
 
   window.addEventListener("resize", () => {
+    if (smoothRaf) {
+      window.cancelAnimationFrame(smoothRaf);
+      smoothRaf = null;
+      heroSquareAnimating = false;
+    }
     applySixAcrossWithHalfCutEnds();
     void heroSquareViewport.offsetWidth;
     currentX = snapToNearestSlot(heroSquareViewport.scrollLeft);
     targetX = currentX;
     heroSquareViewport.scrollLeft = currentX;
     syncArrowState();
+    restartAutoStepTimer();
   });
 
   window.addEventListener("pagehide", () => {
@@ -397,7 +417,7 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     heroSquareAnimating = false;
     syncArrowState();
     if (autoStepTimer) {
-      window.clearInterval(autoStepTimer);
+      window.clearTimeout(autoStepTimer);
       autoStepTimer = null;
     }
   });
@@ -407,7 +427,8 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     const step = getStep();
     if (step <= 1) return;
     // Auto-step: same easing family; duration set by AUTO_SLIDE_DURATION_MS.
-    animateBy(step, AUTO_SLIDE_DURATION_MS);
+    const durationMs = getDurationForStep(AUTO_SLIDE_DURATION_MS, step);
+    animateBy(step, durationMs);
   };
 
   applySixAcrossWithHalfCutEnds();
@@ -424,7 +445,7 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     requestAnimationFrame(syncInitialFrameScroll);
   });
 
-  autoStepTimer = window.setInterval(autoStepOnce, AUTO_STEP_MS);
+  restartAutoStepTimer();
 
   syncArrowState();
 }
@@ -722,9 +743,16 @@ if (topbar && mainHeroSplit) {
   let prevHasPassedHero = topbar.classList.contains("is-solid");
   let topbarSpringTimer = null;
   let heroFoucPendingCleared = false;
-  /** Center-band hysteresis: enter at center match, exit with slack to avoid flicker. */
-  const LINK_BAND_ENTER_SLACK_PX = 0;
-  const LINK_BAND_EXIT_SLACK_PX = 22;
+  /** Center-band hysteresis: wider exit band reduces slow-scroll flicker near threshold. */
+  const LINK_BAND_ENTER_SLACK_PX = -1;
+  const LINK_BAND_EXIT_SLACK_PX = 34;
+  /** Prevent rapid oscillation at the threshold during very slow wheel/trackpad movement. */
+  const NAV_STATE_FLIP_COOLDOWN_MS = 180;
+  /** Flip only after the requested state stays stable for a short hold window. */
+  const NAV_FLIP_CONFIRM_MS = 110;
+  let navStateLastFlipTs = 0;
+  let pendingFlipState = prevHasPassedHero;
+  let pendingFlipSince = 0;
   const springInClass = "topbar-spring-in";
   const springOutClass = "topbar-spring-out";
   document.body.classList.remove(springInClass);
@@ -746,10 +774,7 @@ if (topbar && mainHeroSplit) {
     /** True when the name has cleared the nav link band again (hero overlap) — kills sticky solid + spring lock. */
     let titleBackInHero = false;
     /* Solid nav when the midpoint of the name reaches the midpoint of the nav-link row. */
-    const floatTitleReady = document.querySelector(
-      ".hero-title-float.is-layout-ready"
-    );
-    const titleForAlign = floatTitleReady || heroTitle;
+    const titleForAlign = heroTitle;
     /* Full About | Contact | Resume row — same vertical band you align to when scrolling. */
     const navRightRow = topbar.querySelector(".topbar__nav-right");
 
@@ -769,6 +794,25 @@ if (topbar && mainHeroSplit) {
     // If title is back in hero band, always unsolid.
     if (titleBackInHero) {
       hasPassedHero = false;
+    }
+
+    const requestedFlip = hasPassedHero !== prevHasPassedHero;
+    if (requestedFlip) {
+      const nowTs = performance.now();
+      if (hasPassedHero !== pendingFlipState) {
+        pendingFlipState = hasPassedHero;
+        pendingFlipSince = nowTs;
+        hasPassedHero = prevHasPassedHero;
+      } else if (nowTs - pendingFlipSince < NAV_FLIP_CONFIRM_MS) {
+        hasPassedHero = prevHasPassedHero;
+      } else if (nowTs - navStateLastFlipTs < NAV_STATE_FLIP_COOLDOWN_MS) {
+        hasPassedHero = prevHasPassedHero;
+      } else {
+        navStateLastFlipTs = nowTs;
+      }
+    } else {
+      pendingFlipState = prevHasPassedHero;
+      pendingFlipSince = 0;
     }
 
     if (hasPassedHero !== prevHasPassedHero) {
@@ -793,7 +837,7 @@ if (topbar && mainHeroSplit) {
         topbarSpringTimer = window.setTimeout(() => {
           document.body.classList.remove(springInClass);
           topbarSpringTimer = null;
-        }, 480);
+        }, 500);
       } else {
         const collapseFromPx = Math.max(
           Math.round(heroRect.bottom - 52),
@@ -809,7 +853,7 @@ if (topbar && mainHeroSplit) {
         topbarSpringTimer = window.setTimeout(() => {
           document.body.classList.remove(springOutClass);
           topbarSpringTimer = null;
-        }, 320);
+        }, 240);
       }
     }
 
@@ -864,8 +908,8 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     floatingTitle.href = mainHome.href;
     floatingTitle.innerHTML = heroTitleLink.innerHTML;
     floatingTitle.setAttribute("aria-label", "Go to main page");
-    floatingTitle.style.opacity = "0";
-    floatingTitle.style.visibility = "hidden";
+    floatingTitle.style.opacity = "1";
+    floatingTitle.style.visibility = "visible";
     document.body.appendChild(floatingTitle);
     heroTitle.classList.add("is-scroll-proxy-source");
 
@@ -882,7 +926,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     const HERO_DOCK_TARGET_FONT_PT = 25;
     /** Start from the current hero placement and keep that gap while scaling toward nav dock. */
     const HERO_TITLE_BOTTOM_GAP_START_PX = 20;
-    const HERO_TITLE_BOTTOM_GAP_END_PX = 30;
+    const HERO_TITLE_BOTTOM_GAP_END_PX = 20;
     /** Lower value keeps title larger for longer, closer to reference motion. */
     const HERO_TITLE_SCALE_SCROLL_STEEPNESS = 0.65;
     /** Home nav collapse/lift should be quick and scroll-driven (not timer-driven). */
@@ -890,25 +934,136 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     const HERO_NAV_SCROLL_COLLAPSE_WINDOW = 0.26;
     /** Fine tune docked title vertical position in navbar (positive moves down). */
     const HERO_DOCK_Y_OFFSET_PX = 0;
+    /** Maximum allowed lift above periwinkle section bottom before docking. */
+    const HERO_MAX_EDGE_LIFT_PX = 20;
     const CSS_PT_TO_PX = 96 / 72;
+    /** Delayed scale response for Valerie (no bounce/overshoot). */
+    const TITLE_SCALE_LAG = 0.24;
+    /** Subtle per-frame scale smoothing while keeping Y fully scroll-driven. */
+    const TITLE_SCALE_BLEND = 0.24;
+    /** Reduce baseline compensation strength so scale ease does less vertical travel. */
+    const TITLE_Y_SCALE_COMPENSATION_FACTOR = 0.35;
+    const TITLE_SPRING_SETTLE_Y = 0.08;
+    const TITLE_SPRING_SETTLE_SCALE = 0.0008;
+    /** Smoothly blend from hero-anchored path into dock path over a wider span. */
+    const HERO_DOCK_BLEND_START = 0.68;
+    let springRaf = 0;
+    let springLastTs = 0;
+    let springInit = false;
+    let springTargetY = 0;
+    let springTargetScaleX = 1;
+    let springTargetScaleY = 1;
+    let springY = 0;
+    let springScaleX = 1;
+    let springScaleY = 1;
+    let springYVel = 0;
+    let springScaleXVel = 0;
+    let springScaleYVel = 0;
+    let sourceRectHeight = 0;
+    let whiteNavActiveForColor = false;
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const applyFloatingTransform = (y, sx, sy) => {
+      floatingTitle.style.transform = `translate3d(-50%, ${y.toFixed(2)}px, 0) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
+    };
+    const clampTopToPeriwinkleEdge = (y, renderedScaleY) => {
+      const heroRectLive = mainHeroSplit.getBoundingClientRect();
+      const baseHeight =
+        sourceRectHeight > 0 ? sourceRectHeight : heroTitle.getBoundingClientRect().height || 0;
+      const boundaryTop =
+        heroRectLive.bottom - HERO_MAX_EDGE_LIFT_PX - baseHeight * renderedScaleY;
+      // Hard boundary: keep the title bottom at or above 20px from the hero bottom edge.
+      return Math.min(y, boundaryTop);
+    };
+    const updateFloatingTitleColor = () => {
+      const navRect = topbar.getBoundingClientRect();
+      const titleRect = floatingTitle.getBoundingClientRect();
+      const overlapsNav =
+        titleRect.bottom > navRect.top &&
+        titleRect.top < navRect.bottom &&
+        titleRect.right > navRect.left &&
+        titleRect.left < navRect.right;
+      const forceDark = whiteNavActiveForColor && overlapsNav;
+      floatingTitle.classList.toggle("is-dark", forceDark);
+      // Strict color override rule: black only when in front of visible white nav, white otherwise.
+      floatingTitle.style.setProperty(
+        "color",
+        forceDark ? "#1c1b18" : "#ffffff",
+        "important"
+      );
+      floatingTitle.classList.remove("is-hidden");
+    };
+    const runSpringFrame = (ts) => {
+      if (!springInit) {
+        springInit = true;
+        springY = springTargetY;
+        springScaleX = springTargetScaleX;
+        springScaleY = springTargetScaleY;
+        springYVel = 0;
+        springScaleXVel = 0;
+        springScaleYVel = 0;
+      }
+      const dtScale = clamp((ts - (springLastTs || ts)) / 16.67, 0.5, 2.5);
+      springLastTs = ts;
+      const lag = 1 - Math.pow(1 - TITLE_SCALE_LAG, dtScale);
+      // No bounce: ease scale only, while keeping vertical baseline fixed.
+      springScaleX += (springTargetScaleX - springScaleX) * lag;
+      springScaleY += (springTargetScaleY - springScaleY) * lag;
+      const baseHeight =
+        sourceRectHeight > 0 ? sourceRectHeight : heroTitle.getBoundingClientRect().height || 0;
+      const yScaleCompensation =
+        baseHeight *
+        (springTargetScaleY - springScaleY) *
+        TITLE_Y_SCALE_COMPENSATION_FACTOR;
+      springY = springTargetY + yScaleCompensation;
+      springY = clampTopToPeriwinkleEdge(springY, springScaleY);
+      springYVel = 0;
+      springScaleXVel = 0;
+      springScaleYVel = 0;
+
+      applyFloatingTransform(springY, springScaleX, springScaleY);
+      updateFloatingTitleColor();
+
+      const settled =
+        Math.abs(springTargetY - springY) <= TITLE_SPRING_SETTLE_Y &&
+        Math.abs(springTargetScaleX - springScaleX) <= TITLE_SPRING_SETTLE_SCALE &&
+        Math.abs(springTargetScaleY - springScaleY) <= TITLE_SPRING_SETTLE_SCALE;
+      if (settled) {
+        springY = clampTopToPeriwinkleEdge(springTargetY, springTargetScaleY);
+        springScaleX = springTargetScaleX;
+        springScaleY = springTargetScaleY;
+        springYVel = 0;
+        springScaleXVel = 0;
+        springScaleYVel = 0;
+        applyFloatingTransform(springY, springScaleX, springScaleY);
+        updateFloatingTitleColor();
+        springRaf = 0;
+        springLastTs = 0;
+        return;
+      }
+      springRaf = window.requestAnimationFrame(runSpringFrame);
+    };
 
     const measure = () => {
-      floatingTitle.style.visibility = "hidden";
+      floatingTitle.style.visibility = "visible";
       floatingTitle.style.transform = "translate3d(-50%, 0px, 0) scale(1)";
 
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
       const navRect = topbar.getBoundingClientRect();
+      const navRightRow = topbar.querySelector(".topbar__nav-right");
       const targetDockFontPx = HERO_DOCK_TARGET_FONT_PT * CSS_PT_TO_PX;
       const sourceFontPx = parseFloat(getComputedStyle(heroTitleLink).fontSize) || targetDockFontPx;
       endScale = clamp(targetDockFontPx / sourceFontPx, 0.08, 0.4);
       startTop = sourceRect.top;
       sourceAbsTop = sourceRect.top + currentScrollY;
+      sourceRectHeight = sourceRect.height;
       {
-        // Fixed docking reference: nav-bar center (decoupled from moving nav-link collapse animation).
-        const navCenterY = navRect.top + navRect.height * 0.5;
+        // Dock to nav-link row center so Valerie stops aligned with the links.
+        const navRowRect = navRightRow ? navRightRow.getBoundingClientRect() : null;
+        const navCenterY = navRowRect
+          ? navRowRect.top + navRowRect.height * 0.5
+          : navRect.top + navRect.height * 0.5;
         const heroBottomAbs = mainHeroSplit.getBoundingClientRect().bottom + currentScrollY;
         const endNavLiftProgress = 1;
         const endCollapseScale = 1 - endNavLiftProgress * 0.08;
@@ -937,6 +1092,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
       const navRect = topbar.getBoundingClientRect();
+      const navRightRowLive = topbar.querySelector(".topbar__nav-right");
       const scalePLinear = clamp(currentScrollY / dockScrollY, 0, 1);
       const scaleP =
         1 -
@@ -950,6 +1106,8 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
         1
       );
       const navLiftProgress = 1 - Math.pow(1 - navLiftLinear, 1.9);
+      // Separate easing just for size interpolation so scaling feels smoother.
+      const scaleEase = scaleP * scaleP * (3 - 2 * scaleP);
       const gapEase = scaleP;
       const targetHeroBottomGap =
         HERO_TITLE_BOTTOM_GAP_START_PX +
@@ -959,26 +1117,74 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
         `${(targetHeroBottomGap - HERO_TITLE_BOTTOM_GAP_START_PX).toFixed(2)}px`
       );
       const isSolidNow = topbar.classList.contains("is-solid");
+      const isSpringingIn = document.body.classList.contains("topbar-spring-in");
       const isSpringingOut = document.body.classList.contains("topbar-spring-out");
-      const navStateActive = isSolidNow || isSpringingOut;
-      const effectiveNavCollapseProgress = navStateActive ? navLiftProgress : 0;
+      // Keep collapse progress fully scroll-driven for smooth, continuous transitions.
+      const effectiveNavCollapseProgress = navLiftProgress;
       const effectiveNavLiftProgress = effectiveNavCollapseProgress;
-      const scale = 1 + (endScale - 1) * scaleP;
+      const whiteNavVisibleNow =
+        isSpringingIn || isSpringingOut || effectiveNavCollapseProgress > 0.001;
+      whiteNavActiveForColor = whiteNavVisibleNow;
+      const scale = 1 + (endScale - 1) * scaleEase;
       const scaleX = scale * horizontalSquish;
       const scaleY = scale * verticalStretch;
       const heroRect = mainHeroSplit.getBoundingClientRect();
 
       const heroAnchoredTop =
         heroRect.bottom - targetHeroBottomGap - sourceRect.height * scaleY;
-      /* Stop once centered with nav-bar center; otherwise follow hero-anchored path. */
+      /* Stop once centered with nav-link row center; otherwise follow hero-anchored path. */
+      const navRowRectLive = navRightRowLive
+        ? navRightRowLive.getBoundingClientRect()
+        : null;
+      const navDockCenterY = navRowRectLive
+        ? navRowRectLive.top + navRowRectLive.height * 0.5
+        : navRect.top + navRect.height * 0.5;
       const dockTopLive =
-        navRect.top +
-        navRect.height * 0.5 -
+        navDockCenterY -
         (sourceRect.height * scaleY) * 0.5;
-      const shouldDockNow = heroAnchoredTop <= dockTopLive;
-      const y = (shouldDockNow ? dockTopLive : heroAnchoredTop) + HERO_DOCK_Y_OFFSET_PX;
+      // Never let enlarged Valerie leave the periwinkle section.
+      const boundaryTop =
+        heroRect.bottom - HERO_MAX_EDGE_LIFT_PX - sourceRect.height * scaleY;
+      const constrainedHeroTop = Math.min(heroAnchoredTop, boundaryTop);
+      const dockBlendLinear = clamp(
+        (scaleP - HERO_DOCK_BLEND_START) / (1 - HERO_DOCK_BLEND_START),
+        0,
+        1
+      );
+      const dockBlend = dockBlendLinear * dockBlendLinear * (3 - 2 * dockBlendLinear);
+      const blendedTop =
+        constrainedHeroTop + (dockTopLive - constrainedHeroTop) * dockBlend;
+      const y = blendedTop + HERO_DOCK_Y_OFFSET_PX;
+      const heroBoundaryY = clampTopToPeriwinkleEdge(y, scaleY);
+      const dockStopY = dockTopLive + HERO_DOCK_Y_OFFSET_PX;
+      // Hard stop: Valerie can move into dock, but never scroll above nav-link center.
+      const clampedY = Math.max(heroBoundaryY, dockStopY);
 
-      floatingTitle.style.transform = `translate3d(-50%, ${y.toFixed(2)}px, 0) scale(${scaleX.toFixed(4)}, ${scaleY.toFixed(4)})`;
+      springTargetY = clampedY;
+      springTargetScaleX = scaleX;
+      springTargetScaleY = scaleY;
+      // Single-path motion: apply directly from scroll-driven targets to avoid choppy dual-layer lag.
+      if (springRaf) {
+        window.cancelAnimationFrame(springRaf);
+        springRaf = 0;
+        springLastTs = 0;
+      }
+      springInit = true;
+      springY = clampedY;
+      if (!Number.isFinite(springScaleX) || !Number.isFinite(springScaleY)) {
+        springScaleX = springTargetScaleX;
+        springScaleY = springTargetScaleY;
+      } else {
+        springScaleX += (springTargetScaleX - springScaleX) * TITLE_SCALE_BLEND;
+        springScaleY += (springTargetScaleY - springScaleY) * TITLE_SCALE_BLEND;
+        if (Math.abs(springTargetScaleX - springScaleX) < TITLE_SPRING_SETTLE_SCALE) {
+          springScaleX = springTargetScaleX;
+        }
+        if (Math.abs(springTargetScaleY - springScaleY) < TITLE_SPRING_SETTLE_SCALE) {
+          springScaleY = springTargetScaleY;
+        }
+      }
+      applyFloatingTransform(springY, springScaleX, springScaleY);
       floatingTitle.style.visibility = "visible";
       floatingTitle.style.opacity = "1";
       floatingTitle.classList.add("is-layout-ready");
@@ -994,15 +1200,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
         "--hero-nav-lift-progress",
         effectiveNavLiftProgress.toFixed(4)
       );
-      const titleRect = floatingTitle.getBoundingClientRect();
-      const overlapsNav =
-        titleRect.bottom > navRect.top &&
-        titleRect.top < navRect.bottom &&
-        titleRect.right > navRect.left &&
-        titleRect.left < navRect.right;
-      const wantsDarkText = overlapsNav;
-      floatingTitle.classList.toggle("is-dark", wantsDarkText);
-      floatingTitle.classList.remove("is-hidden");
+      updateFloatingTitleColor();
     };
 
     const syncFloatingTitle = () => {
