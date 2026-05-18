@@ -387,6 +387,19 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     restartAutoStepTimer();
   });
 
+  // Keep autoplay reliable after viewport minimize/restore or tab visibility changes.
+  const resumeHeroSquareAutoplay = () => {
+    // Resize/minimize can leave hover state "stuck"; clear it so autoplay can resume.
+    heroSquarePointerOverImages = false;
+    if (!heroSquareAnimating) {
+      currentX = snapToNearestSlot(heroSquareViewport.scrollLeft);
+      targetX = currentX;
+      heroSquareViewport.scrollLeft = currentX;
+    }
+    restartAutoStepTimer();
+    syncArrowState();
+  };
+
   heroSquareViewport.addEventListener("scroll", () => {
     if (smoothRaf || heroSquareAnimating) return;
     currentX = snapToNearestSlot(heroSquareViewport.scrollLeft);
@@ -406,7 +419,22 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     targetX = currentX;
     heroSquareViewport.scrollLeft = currentX;
     syncArrowState();
-    restartAutoStepTimer();
+    resumeHeroSquareAutoplay();
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (autoStepTimer) {
+        window.clearTimeout(autoStepTimer);
+        autoStepTimer = null;
+      }
+      return;
+    }
+    resumeHeroSquareAutoplay();
+  });
+
+  window.addEventListener("pageshow", () => {
+    resumeHeroSquareAutoplay();
   });
 
   window.addEventListener("pagehide", () => {
@@ -741,17 +769,24 @@ if (topbar && mainHeroSplit) {
   let heroNavRafId = null;
   let prevHasPassedHero = topbar.classList.contains("is-solid");
   let topbarPopTimer = null;
+  let navReentryBlockedUntil = 0;
+  let lastNavScrollY = window.scrollY || window.pageYOffset || 0;
+  let navLastFlipAt = performance.now();
+  let navLastFlipScrollY = lastNavScrollY;
   let heroFoucPendingCleared = false;
   /** Center-band hysteresis: wider exit band reduces slow-scroll flicker near threshold. */
   const LINK_BAND_ENTER_SLACK_PX = 0;
   const LINK_BAND_EXIT_SLACK_PX = 10;
+  const NAV_FLIP_LOCK_MS = 220;
+  const NAV_MIN_SCROLL_DELTA_PX = 3;
   document.body.classList.remove("topbar-spring-in");
   document.body.classList.remove("topbar-spring-out");
 
   const syncTopbarStyleFromHero = () => {
-    if (typeof syncFloatingTitleImmediate === "function") {
-      syncFloatingTitleImmediate();
-    }
+    const nowTs = performance.now();
+    const currentScrollY = window.scrollY || window.pageYOffset || 0;
+    const scrollingDown = currentScrollY > lastNavScrollY + 0.4;
+    const scrollingUp = currentScrollY < lastNavScrollY - 0.4;
     let hasPassedHero = prevHasPassedHero;
     /** True when the name has cleared the nav link band again (hero overlap) — kills sticky solid + spring lock. */
     let titleBackInHero = false;
@@ -778,6 +813,31 @@ if (topbar && mainHeroSplit) {
     if (titleBackInHero) {
       hasPassedHero = false;
     }
+    // Hold entered state while paused/scrolling down to prevent threshold jitter jolts.
+    if (prevHasPassedHero && !scrollingUp && !titleBackInHero) {
+      hasPassedHero = true;
+    }
+    // Prevent nav re-entry while scrolling up (eliminates post-extend pop on top).
+    if (!prevHasPassedHero && !scrollingDown) {
+      hasPassedHero = false;
+    }
+    // Prevent immediate threshold rebound that causes a random pop right after fade-out.
+    if (!prevHasPassedHero && nowTs < navReentryBlockedUntil) {
+      hasPassedHero = false;
+    }
+    // Extra anti-jitter gate: ignore micro flip-flops near threshold unless enough time/scroll has passed.
+    if (hasPassedHero !== prevHasPassedHero) {
+      const scrolledSinceFlip = Math.abs(currentScrollY - navLastFlipScrollY);
+      if (
+        nowTs - navLastFlipAt < NAV_FLIP_LOCK_MS ||
+        scrolledSinceFlip < NAV_MIN_SCROLL_DELTA_PX
+      ) {
+        hasPassedHero = prevHasPassedHero;
+      } else {
+        navLastFlipAt = nowTs;
+        navLastFlipScrollY = currentScrollY;
+      }
+    }
 
     if (hasPassedHero !== prevHasPassedHero) {
       if (topbarPopTimer) {
@@ -792,14 +852,25 @@ if (topbar && mainHeroSplit) {
           Math.round((topbar.offsetHeight || 68) + 15)
         );
         topbar.style.setProperty("--topbar-pop-start-height", `${popStartHeightPx}px`);
+        topbar.classList.remove("topbar-exit-extend");
+        topbar.classList.remove("topbar-pop-out");
+        topbar.style.removeProperty("--topbar-pop-end-height");
         topbar.classList.add("topbar-pop-in");
         topbarPopTimer = window.setTimeout(() => {
           topbar.classList.remove("topbar-pop-in");
           topbarPopTimer = null;
-        }, 420);
+        }, 520);
       } else {
+        topbar.classList.add("topbar-exit-extend");
+        topbar.classList.remove("topbar-pop-out");
         topbar.classList.remove("topbar-pop-in");
         topbar.style.removeProperty("--topbar-pop-start-height");
+        topbar.style.removeProperty("--topbar-pop-end-height");
+        topbarPopTimer = window.setTimeout(() => {
+          topbar.classList.remove("topbar-exit-extend");
+          topbarPopTimer = null;
+        }, 520);
+        navReentryBlockedUntil = nowTs + 520;
       }
     }
 
@@ -807,6 +878,10 @@ if (topbar && mainHeroSplit) {
     document.body.classList.remove("topbar-spring-out");
 
     topbar.classList.toggle("is-solid", hasPassedHero);
+    // Run hero/nav visual sync only after solid-state class is finalized for this frame.
+    if (typeof syncFloatingTitleImmediate === "function") {
+      syncFloatingTitleImmediate();
+    }
 
     if (!document.body.classList.contains("nav-scroll-hydrated")) {
       document.body.classList.add("nav-scroll-hydrated");
@@ -824,6 +899,7 @@ if (topbar && mainHeroSplit) {
       });
     }
 
+    lastNavScrollY = currentScrollY;
     prevHasPassedHero = hasPassedHero;
   };
 
@@ -1064,8 +1140,10 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const effectiveNavCollapseProgress = navLiftProgress;
       const effectiveNavLiftProgress = effectiveNavCollapseProgress;
       const isPoppingIn = topbar.classList.contains("topbar-pop-in");
+      const isExitExtending = topbar.classList.contains("topbar-exit-extend");
       const navFadeProgress = isSolidNow || isPoppingIn ? 1 : 0;
-      const navSheetExtraPx = 0;
+      const navSheetExtraPx = isExitExtending ? 60 : 0;
+      const navLinksLiftProgress = isSolidNow || isPoppingIn ? 1 : 0;
       const whiteNavVisibleNow = isSolidNow || navFadeProgress > 0.001;
       whiteNavActiveForColor = whiteNavVisibleNow;
       topbar.classList.toggle("nav-sheet-visible", navFadeProgress > 0.01);
@@ -1148,6 +1226,10 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       topbar.style.setProperty(
         "--hero-nav-lift-progress",
         effectiveNavLiftProgress.toFixed(4)
+      );
+      topbar.style.setProperty(
+        "--hero-nav-links-progress",
+        navLinksLiftProgress.toFixed(4)
       );
       topbar.style.setProperty(
         "--hero-nav-fade-progress",

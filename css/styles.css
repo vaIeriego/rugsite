@@ -11,7 +11,7 @@
   --clr-black:    #0d0d0d;
   --clr-white:    #ffffff;
   --clr-accent:   #7eb8d4;   /* light blue — nav-line hover */
-  --clr-bg:       #FAF9F6;
+  --clr-bg:       #FCFBF8;
   --clr-muted:    #7a7a6e;
   --clr-border:   rgba(255,255,255,0.18);
   --max-width:    1100px;
@@ -2982,6 +2982,7 @@ body.page-home .topbar {
   padding: calc(1.02rem + 3.5px + 1.5pt) 25px;
   --hero-nav-collapse-progress: 0;
   --hero-nav-lift-progress: 0;
+  --hero-nav-links-progress: 0;
   --hero-nav-fade-progress: 0;
   --hero-nav-sheet-extra: 0px;
 }
@@ -2993,7 +2994,9 @@ body.page-home .topbar::before {
   height: calc(100% + var(--hero-nav-sheet-extra));
   transform-origin: top center;
   transform: scaleY(1);
-  transition: opacity 0.5s ease;
+  transition:
+    opacity 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.52s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes homeTopbarPopCollapse {
@@ -3030,8 +3033,8 @@ body.page-home .topbar__nav-right {
   position: relative;
   top: 0;
   gap: calc(0.8rem + 10px);
-  transform: translateY(calc(30px * (1 - var(--hero-nav-lift-progress))));
-  transition: none;
+  transform: translateY(calc(30px * (1 - var(--hero-nav-links-progress))));
+  transition: transform 0.5s cubic-bezier(0.32, 0.02, 0.2, 1);
 }
 
 body.page-home .topbar__nav-left {
