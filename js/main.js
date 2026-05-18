@@ -739,42 +739,25 @@ const HERO_NAV_EXTRA_SCROLL_PX = 20;
  * applies one sync per paint with the latest scroll position (consistent at any speed). */
 if (topbar && mainHeroSplit) {
   let heroNavRafId = null;
-  let lastScrollY = window.scrollY || window.pageYOffset || 0;
   let prevHasPassedHero = topbar.classList.contains("is-solid");
-  let topbarSpringTimer = null;
+  let topbarPopTimer = null;
   let heroFoucPendingCleared = false;
   /** Center-band hysteresis: wider exit band reduces slow-scroll flicker near threshold. */
-  const LINK_BAND_ENTER_SLACK_PX = -1;
-  const LINK_BAND_EXIT_SLACK_PX = 34;
-  /** Prevent rapid oscillation at the threshold during very slow wheel/trackpad movement. */
-  const NAV_STATE_FLIP_COOLDOWN_MS = 180;
-  /** Flip only after the requested state stays stable for a short hold window. */
-  const NAV_FLIP_CONFIRM_MS = 110;
-  let navStateLastFlipTs = 0;
-  let pendingFlipState = prevHasPassedHero;
-  let pendingFlipSince = 0;
-  const springInClass = "topbar-spring-in";
-  const springOutClass = "topbar-spring-out";
-  document.body.classList.remove(springInClass);
-  document.body.classList.remove(springOutClass);
+  const LINK_BAND_ENTER_SLACK_PX = 0;
+  const LINK_BAND_EXIT_SLACK_PX = 10;
+  document.body.classList.remove("topbar-spring-in");
+  document.body.classList.remove("topbar-spring-out");
 
   const syncTopbarStyleFromHero = () => {
     if (typeof syncFloatingTitleImmediate === "function") {
       syncFloatingTitleImmediate();
     }
-    const currentScrollY = window.scrollY || window.pageYOffset || 0;
-    const scrollingUp = currentScrollY < lastScrollY - 0.5;
-    const navHeight = topbar.offsetHeight || 0;
-    const heroRect = mainHeroSplit.getBoundingClientRect();
-    const HERO_NAV_ENTER_SOLID_OFFSET_UP_PX = -52;
-    const HERO_NAV_ENTER_SOLID_OFFSET_DOWN_PX = -14;
-    const HERO_NAV_EXIT_SOLID_OFFSET_UP_PX = 16;
-    const HERO_NAV_EXIT_SOLID_OFFSET_DOWN_PX = 22;
     let hasPassedHero = prevHasPassedHero;
     /** True when the name has cleared the nav link band again (hero overlap) — kills sticky solid + spring lock. */
     let titleBackInHero = false;
-    /* Solid nav when the midpoint of the name reaches the midpoint of the nav-link row. */
-    const titleForAlign = heroTitle;
+    /* Solid nav when visible floating title center reaches nav-link-row center. */
+    const floatingTitleLive = document.querySelector(".hero-title-float");
+    const titleForAlign = floatingTitleLive || heroTitle;
     /* Full About | Contact | Resume row — same vertical band you align to when scrolling. */
     const navRightRow = topbar.querySelector(".topbar__nav-right");
 
@@ -796,66 +779,32 @@ if (topbar && mainHeroSplit) {
       hasPassedHero = false;
     }
 
-    const requestedFlip = hasPassedHero !== prevHasPassedHero;
-    if (requestedFlip) {
-      const nowTs = performance.now();
-      if (hasPassedHero !== pendingFlipState) {
-        pendingFlipState = hasPassedHero;
-        pendingFlipSince = nowTs;
-        hasPassedHero = prevHasPassedHero;
-      } else if (nowTs - pendingFlipSince < NAV_FLIP_CONFIRM_MS) {
-        hasPassedHero = prevHasPassedHero;
-      } else if (nowTs - navStateLastFlipTs < NAV_STATE_FLIP_COOLDOWN_MS) {
-        hasPassedHero = prevHasPassedHero;
-      } else {
-        navStateLastFlipTs = nowTs;
+    if (hasPassedHero !== prevHasPassedHero) {
+      if (topbarPopTimer) {
+        window.clearTimeout(topbarPopTimer);
+        topbarPopTimer = null;
       }
-    } else {
-      pendingFlipState = prevHasPassedHero;
-      pendingFlipSince = 0;
+      if (hasPassedHero) {
+        const heroRect = mainHeroSplit.getBoundingClientRect();
+        const navRect = topbar.getBoundingClientRect();
+        const popStartHeightPx = Math.max(
+          Math.round(heroRect.bottom + 20 - navRect.top),
+          Math.round((topbar.offsetHeight || 68) + 15)
+        );
+        topbar.style.setProperty("--topbar-pop-start-height", `${popStartHeightPx}px`);
+        topbar.classList.add("topbar-pop-in");
+        topbarPopTimer = window.setTimeout(() => {
+          topbar.classList.remove("topbar-pop-in");
+          topbarPopTimer = null;
+        }, 420);
+      } else {
+        topbar.classList.remove("topbar-pop-in");
+        topbar.style.removeProperty("--topbar-pop-start-height");
+      }
     }
 
-    if (hasPassedHero !== prevHasPassedHero) {
-      if (topbarSpringTimer) {
-        window.clearTimeout(topbarSpringTimer);
-        topbarSpringTimer = null;
-      }
-      const navMeas = topbar.offsetHeight || 70;
-      const SHEET_MIN_TRAVEL_ABOVE_NAV_PX = 30;
-      if (hasPassedHero) {
-        const sheetStartPx = Math.max(
-          Math.round(heroRect.top + 6),
-          navMeas + SHEET_MIN_TRAVEL_ABOVE_NAV_PX
-        );
-        document.documentElement.style.setProperty(
-          "--topbar-spring-start-height",
-          `${sheetStartPx}px`
-        );
-        document.documentElement.style.removeProperty("--topbar-collapse-from-height");
-        document.body.classList.remove(springOutClass);
-        document.body.classList.add(springInClass);
-        topbarSpringTimer = window.setTimeout(() => {
-          document.body.classList.remove(springInClass);
-          topbarSpringTimer = null;
-        }, 500);
-      } else {
-        const collapseFromPx = Math.max(
-          Math.round(heroRect.bottom - 52),
-          navMeas + SHEET_MIN_TRAVEL_ABOVE_NAV_PX
-        );
-        document.documentElement.style.setProperty(
-          "--topbar-collapse-from-height",
-          `${collapseFromPx}px`
-        );
-        document.documentElement.style.removeProperty("--topbar-spring-start-height");
-        document.body.classList.remove(springInClass);
-        document.body.classList.add(springOutClass);
-        topbarSpringTimer = window.setTimeout(() => {
-          document.body.classList.remove(springOutClass);
-          topbarSpringTimer = null;
-        }, 240);
-      }
-    }
+    document.body.classList.remove("topbar-spring-in");
+    document.body.classList.remove("topbar-spring-out");
 
     topbar.classList.toggle("is-solid", hasPassedHero);
 
@@ -875,7 +824,6 @@ if (topbar && mainHeroSplit) {
       });
     }
 
-    lastScrollY = currentScrollY;
     prevHasPassedHero = hasPassedHero;
   };
 
@@ -942,11 +890,11 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     /** Subtle per-frame scale smoothing while keeping Y fully scroll-driven. */
     const TITLE_SCALE_BLEND = 0.4;
     /** Reduce baseline compensation strength so scale ease does less vertical travel. */
-    const TITLE_Y_SCALE_COMPENSATION_FACTOR = 0.35;
+    const TITLE_Y_SCALE_COMPENSATION_FACTOR = 0.18;
     const TITLE_SPRING_SETTLE_Y = 0.08;
     const TITLE_SPRING_SETTLE_SCALE = 0.0008;
     /** Start docking earlier to avoid a visible pause before nav entry. */
-    const HERO_DOCK_BLEND_START = 0.52;
+    const HERO_DOCK_BLEND_START = 0.6;
     /** Blend band around dock stop to eliminate any remaining handoff jolt. */
     const HERO_DOCK_TRANSITION_BAND_PX = 26;
     let springRaf = 0;
@@ -1115,8 +1063,12 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       // Keep collapse progress fully scroll-driven for smooth, continuous transitions.
       const effectiveNavCollapseProgress = navLiftProgress;
       const effectiveNavLiftProgress = effectiveNavCollapseProgress;
-      const whiteNavVisibleNow = isSolidNow || effectiveNavCollapseProgress > 0.001;
+      const isPoppingIn = topbar.classList.contains("topbar-pop-in");
+      const navFadeProgress = isSolidNow || isPoppingIn ? 1 : 0;
+      const navSheetExtraPx = 0;
+      const whiteNavVisibleNow = isSolidNow || navFadeProgress > 0.001;
       whiteNavActiveForColor = whiteNavVisibleNow;
+      topbar.classList.toggle("nav-sheet-visible", navFadeProgress > 0.01);
       const scale = 1 + (endScale - 1) * scaleEase;
       const scaleX = scale * horizontalSquish;
       const scaleY = scale * verticalStretch;
@@ -1196,6 +1148,14 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       topbar.style.setProperty(
         "--hero-nav-lift-progress",
         effectiveNavLiftProgress.toFixed(4)
+      );
+      topbar.style.setProperty(
+        "--hero-nav-fade-progress",
+        navFadeProgress.toFixed(4)
+      );
+      topbar.style.setProperty(
+        "--hero-nav-sheet-extra",
+        `${navSheetExtraPx.toFixed(2)}px`
       );
       updateFloatingTitleColor();
     };
