@@ -207,13 +207,12 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
   let currentX = heroSquareViewport.scrollLeft;
   let targetX = currentX;
   let autoStepTimer = null;
-  /** True while pointer is over the carousel image viewport — auto-advance stays off until pointer leaves. */
-  let heroSquarePointerOverImages = false;
   const AUTO_SLIDE_DURATION_MS = 1000;
   /** Arrow clicks: slower than auto-start tweak; paired with ease-in-out-quart below. */
   const MANUAL_SLIDE_DURATION_MS = 1080;
   /* Consistent cadence: advance one slot every 4 seconds. */
   const AUTO_STEP_MS = 4000;
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   /** Keep perceived speed consistent across viewport sizes (slot width changes with layout). */
   const BASELINE_SLOT_STEP_PX = 300;
   const getDurationForStep = (baseDurationMs, stepPx) => {
@@ -271,7 +270,6 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
         smoothRaf = null;
         heroSquareAnimating = false;
         syncArrowState();
-        syncHeroSquareAutoPause();
       }
     };
 
@@ -279,28 +277,10 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     return true;
   };
 
-  /** Pause auto-advance while hovered; if a slide is still easing, wait — do not cancel the RAF animation. */
-  const syncHeroSquareAutoPause = () => {
-    if (!heroSquarePointerOverImages) return;
-    if (heroSquareAnimating) return;
-    if (autoStepTimer) {
-      window.clearInterval(autoStepTimer);
-      autoStepTimer = null;
-    }
-  };
-
   const restartAutoStepTimer = () => {
-    if (autoStepTimer) {
-      window.clearTimeout(autoStepTimer);
-      autoStepTimer = null;
-    }
-    if (heroSquarePointerOverImages) return;
-    autoStepTimer = window.setTimeout(function tickAutoStep() {
-      autoStepTimer = null;
+    if (autoStepTimer) return;
+    autoStepTimer = window.setInterval(() => {
       autoStepOnce();
-      if (!heroSquarePointerOverImages) {
-        autoStepTimer = window.setTimeout(tickAutoStep, AUTO_STEP_MS);
-      }
     }, AUTO_STEP_MS);
   };
 
@@ -378,19 +358,8 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     { passive: false }
   );
 
-  heroSquareViewport.addEventListener("pointerenter", () => {
-    heroSquarePointerOverImages = true;
-    syncHeroSquareAutoPause();
-  });
-  heroSquareViewport.addEventListener("pointerleave", () => {
-    heroSquarePointerOverImages = false;
-    restartAutoStepTimer();
-  });
-
   // Keep autoplay reliable after viewport minimize/restore or tab visibility changes.
   const resumeHeroSquareAutoplay = () => {
-    // Resize/minimize can leave hover state "stuck"; clear it so autoplay can resume.
-    heroSquarePointerOverImages = false;
     if (!heroSquareAnimating) {
       currentX = snapToNearestSlot(heroSquareViewport.scrollLeft);
       targetX = currentX;
@@ -425,7 +394,7 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
       if (autoStepTimer) {
-        window.clearTimeout(autoStepTimer);
+        window.clearInterval(autoStepTimer);
         autoStepTimer = null;
       }
       return;
@@ -445,7 +414,7 @@ if (heroSquareViewport && heroSquarePrev && heroSquareNext) {
     heroSquareAnimating = false;
     syncArrowState();
     if (autoStepTimer) {
-      window.clearTimeout(autoStepTimer);
+      window.clearInterval(autoStepTimer);
       autoStepTimer = null;
     }
   });
@@ -773,21 +742,34 @@ if (topbar && mainHeroSplit) {
   let lastNavScrollY = window.scrollY || window.pageYOffset || 0;
   let navLastFlipAt = performance.now();
   let navLastFlipScrollY = lastNavScrollY;
+  let navFastScrollLockUntil = 0;
   let heroFoucPendingCleared = false;
   /** Center-band hysteresis: wider exit band reduces slow-scroll flicker near threshold. */
   const LINK_BAND_ENTER_SLACK_PX = 0;
   const LINK_BAND_EXIT_SLACK_PX = 10;
   const NAV_FLIP_LOCK_MS = 220;
   const NAV_MIN_SCROLL_DELTA_PX = 3;
+  /**
+   * Fast-scroll guard: freeze nav-state flips during high-velocity wheel/trackpad movement,
+   * then allow a flip again after a short settle window.
+   */
+  const NAV_FAST_SCROLL_DELTA_PX = 22;
+  const NAV_FAST_SCROLL_LOCK_MS = 180;
   document.body.classList.remove("topbar-spring-in");
   document.body.classList.remove("topbar-spring-out");
 
   const syncTopbarStyleFromHero = () => {
+    // Sync floating-title geometry first so nav decisions use the live text position this frame.
+    if (typeof syncFloatingTitleImmediate === "function") {
+      syncFloatingTitleImmediate();
+    }
     const nowTs = performance.now();
     const currentScrollY = window.scrollY || window.pageYOffset || 0;
+    const scrollDeltaSinceLastFrame = Math.abs(currentScrollY - lastNavScrollY);
     const scrollingDown = currentScrollY > lastNavScrollY + 0.4;
     const scrollingUp = currentScrollY < lastNavScrollY - 0.4;
     let hasPassedHero = prevHasPassedHero;
+    let titleCenterDeltaY = Number.POSITIVE_INFINITY;
     /** True when the name has cleared the nav link band again (hero overlap) — kills sticky solid + spring lock. */
     let titleBackInHero = false;
     /* Solid nav when visible floating title center reaches nav-link-row center. */
@@ -801,6 +783,7 @@ if (topbar && mainHeroSplit) {
       const rowRect = navRightRow.getBoundingClientRect();
       const titleCenterY = titleRect.top + titleRect.height * 0.5;
       const rowCenterY = rowRect.top + rowRect.height * 0.5;
+      titleCenterDeltaY = titleCenterY - rowCenterY;
       if (prevHasPassedHero) {
         hasPassedHero = titleCenterY <= rowCenterY + LINK_BAND_EXIT_SLACK_PX;
       } else {
@@ -813,13 +796,9 @@ if (topbar && mainHeroSplit) {
     if (titleBackInHero) {
       hasPassedHero = false;
     }
-    // Hold entered state while paused/scrolling down to prevent threshold jitter jolts.
-    if (prevHasPassedHero && !scrollingUp && !titleBackInHero) {
+    // Hold entered state briefly only when motion is effectively paused.
+    if (prevHasPassedHero && !scrollingUp && !scrollingDown && !titleBackInHero) {
       hasPassedHero = true;
-    }
-    // Prevent nav re-entry while scrolling up (eliminates post-extend pop on top).
-    if (!prevHasPassedHero && !scrollingDown) {
-      hasPassedHero = false;
     }
     // Prevent immediate threshold rebound that causes a random pop right after fade-out.
     if (!prevHasPassedHero && nowTs < navReentryBlockedUntil) {
@@ -837,6 +816,16 @@ if (topbar && mainHeroSplit) {
         navLastFlipAt = nowTs;
         navLastFlipScrollY = currentScrollY;
       }
+    }
+    // Prevent nav switching while user is fast-scrolling; apply the flip only after movement settles.
+    if (scrollDeltaSinceLastFrame >= NAV_FAST_SCROLL_DELTA_PX) {
+      navFastScrollLockUntil = nowTs + NAV_FAST_SCROLL_LOCK_MS;
+    }
+    const isClearlyPastThreshold = Number.isFinite(titleCenterDeltaY)
+      ? Math.abs(titleCenterDeltaY) > 26
+      : false;
+    if (hasPassedHero !== prevHasPassedHero && nowTs < navFastScrollLockUntil && !isClearlyPastThreshold) {
+      hasPassedHero = prevHasPassedHero;
     }
 
     if (hasPassedHero !== prevHasPassedHero) {
@@ -1994,78 +1983,60 @@ if (splitRightPortfolioLink) {
   });
 }
 
-const heroFollowImage = document.querySelector(".hero-follow-image");
-if (heroFollowImage) {
-  const POST_HERO_REVEAL_STAGGER_MS = 155;
-  let postHeroRevealStarted = false;
+const initPostHeroScrollReveal = () => {
+  if (!document.body.classList.contains("page-home")) return;
 
-  const gatherPostHeroRevealTargets = () => {
-    const out = [];
-    if (!document.body.classList.contains("page-home")) return out;
-    const heroSplit = document.querySelector("body.page-home > section.split:first-of-type");
-    if (!heroSplit) return out;
-    for (let el = heroSplit.nextElementSibling; el; el = el.nextElementSibling) {
-      if (el.matches("nav#navOverlay, nav.nav-overlay")) continue;
-      if (el.matches("section.hero-follow-image")) {
-        Array.prototype.forEach.call(el.children, (node) => out.push(node));
-        continue;
-      }
-      if (el.matches("section, footer")) out.push(el);
-    }
-    return out;
+  const heroSplit = document.querySelector("body.page-home > section.split:first-of-type");
+  if (!heroSplit) return;
+
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const revealTargets = [];
+
+  const addRevealItem = (node, delayMs) => {
+    if (!node || node.nodeType !== 1 || node.classList.contains("scroll-reveal")) return;
+    node.classList.add("scroll-reveal");
+    node.style.setProperty("--reveal-delay", `${Math.max(0, delayMs)}ms`);
+    revealTargets.push(node);
   };
 
-  const startPostHeroRevealSequence = () => {
-    if (postHeroRevealStarted) return;
-    postHeroRevealStarted = true;
-    const targets = gatherPostHeroRevealTargets();
-    if (!targets.length) return;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) {
-      targets.forEach((node) => {
-        node.classList.add("post-hero-reveal", "is-post-hero-visible");
-      });
-      return;
-    }
-    targets.forEach((node) => {
-      node.classList.add("post-hero-reveal");
-    });
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        targets.forEach((node, i) => {
-          window.setTimeout(() => {
-            node.classList.add("is-post-hero-visible");
-          }, i * POST_HERO_REVEAL_STAGGER_MS);
-        });
-      });
-    });
-  };
+  for (let block = heroSplit.nextElementSibling; block; block = block.nextElementSibling) {
+    if (block.matches("nav#navOverlay, nav.nav-overlay")) continue;
+    if (!block.matches("section, footer")) continue;
+    const directChildren = Array.from(block.children).filter((el) => el.nodeType === 1);
+    const revealNodes = block.classList.contains("hero-follow-image")
+      ? directChildren
+      : directChildren.length > 1
+        ? directChildren.slice(0, 6)
+        : [block];
 
-  const revealHeroFollowImage = () => {
-    heroFollowImage.classList.add("is-visible");
-    startPostHeroRevealSequence();
-  };
-
-  if ("IntersectionObserver" in window) {
-    const heroFollowObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) return;
-          revealHeroFollowImage();
-          heroFollowObserver.disconnect();
-        });
-      },
-      {
-        threshold: 0.22,
-        rootMargin: "0px 0px -8% 0px",
-      }
-    );
-
-    heroFollowObserver.observe(heroFollowImage);
-  } else {
-    revealHeroFollowImage();
+    revealNodes.forEach((el, i) => addRevealItem(el, i * 95));
   }
-}
+
+  if (!revealTargets.length) return;
+
+  if (reducedMotion || !("IntersectionObserver" in window)) {
+    revealTargets.forEach((node) => node.classList.add("is-revealed"));
+    return;
+  }
+
+  const revealObserver = new IntersectionObserver(
+    (entries, observer) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("is-revealed");
+        observer.unobserve(entry.target);
+      });
+    },
+    {
+      threshold: 0.16,
+      rootMargin: "0px 0px -9% 0px",
+    }
+  );
+
+  revealTargets.forEach((node) => revealObserver.observe(node));
+};
+
+initPostHeroScrollReveal();
 
 /** Rug contact form: opens default mail app (e.g. Outlook) with a prefilled message via mailto: */
 const contactRugForm = document.getElementById("contact-rug-form");
