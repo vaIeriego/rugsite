@@ -2179,8 +2179,8 @@ const initPostHeroScrollReveal = () => {
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const revealTargets = [];
-  const IMAGE_TO_TEXT_DELAY_MS = 500;
-  const TRADITIONAL_TEXT_DELAY_MS = 300;
+  const IMAGE_TO_TEXT_DELAY_MS = 300;
+  const TRADITIONAL_TEXT_DELAY_MS = 230;
 
   const addRevealItem = (node, delayMs, options = {}) => {
     if (!node || node.nodeType !== 1 || node.classList.contains("scroll-reveal")) return;

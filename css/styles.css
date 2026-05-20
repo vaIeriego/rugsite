@@ -3565,6 +3565,13 @@ body.page-home .hero-square-carousel__collection-five-text.scroll-reveal {
   transform: none !important;
 }
 
+body.page-home .hero-traditional-layout .hero-square-carousel__diag-stack.scroll-reveal {
+  transform: translate3d(0, 45px, 0);
+  transition:
+    opacity 2.4s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 2.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 body.page-home .hero-square-carousel__kees.scroll-reveal > *,
 body.page-home .hero-square-carousel__collection-two-text.scroll-reveal > *,
 body.page-home .hero-square-carousel__collection-three-text.scroll-reveal > *,
