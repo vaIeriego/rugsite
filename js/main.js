@@ -2180,7 +2180,7 @@ const initPostHeroScrollReveal = () => {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const revealTargets = [];
   const IMAGE_TO_TEXT_DELAY_MS = 500;
-  const TRADITIONAL_EXTRA_TEXT_DELAY_MS = 900;
+  const TRADITIONAL_TEXT_DELAY_MS = 300;
 
   const addRevealItem = (node, delayMs, options = {}) => {
     if (!node || node.nodeType !== 1 || node.classList.contains("scroll-reveal")) return;
@@ -2219,7 +2219,7 @@ const initPostHeroScrollReveal = () => {
         if (traditionalText) {
           addRevealItem(
             traditionalText,
-            traditionalRects ? IMAGE_TO_TEXT_DELAY_MS + TRADITIONAL_EXTRA_TEXT_DELAY_MS : 0,
+            traditionalRects ? TRADITIONAL_TEXT_DELAY_MS : 0,
             { noLift: true }
           );
         }
@@ -2238,7 +2238,7 @@ const initPostHeroScrollReveal = () => {
             const textPiece = pieces.find((el) => String(el.className || "").includes("-text")) || null;
 
             if (imagePiece) addRevealItem(imagePiece, 0);
-            if (textPiece) addRevealItem(textPiece, imagePiece ? IMAGE_TO_TEXT_DELAY_MS : 0);
+            if (textPiece) addRevealItem(textPiece, imagePiece ? IMAGE_TO_TEXT_DELAY_MS : 0, { noLift: true });
 
             const extraPieces = pieces.filter((el) => el !== imagePiece && el !== textPiece);
             extraPieces.forEach((piece, idx) => addRevealItem(piece, (imagePiece ? IMAGE_TO_TEXT_DELAY_MS : 0) + 70 * (idx + 1)));
