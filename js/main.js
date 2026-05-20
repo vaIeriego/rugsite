@@ -16,6 +16,74 @@ if (yearEl) yearEl.textContent = new Date().getFullYear();
 /** Home hero: floating title layout runs before nav reads geometry (same scroll frame). */
 let syncFloatingTitleImmediate = null;
 
+const navEntry =
+  (typeof performance !== "undefined" &&
+    typeof performance.getEntriesByType === "function" &&
+    performance.getEntriesByType("navigation") &&
+    performance.getEntriesByType("navigation")[0]) ||
+  null;
+const isRefreshLikeLoad = !!(
+  navEntry &&
+  (navEntry.type === "reload" || navEntry.type === "back_forward")
+);
+if (isRefreshLikeLoad) {
+  document.body.classList.add("refresh-no-anim");
+}
+
+const clearHeroFoucPending = () => {
+  document.documentElement.classList.remove("hero-fouc-pending");
+};
+const dispatchHomeRefreshSync = () => {
+  window.dispatchEvent(new Event("home-refresh-sync"));
+};
+let refreshSyncRafA = 0;
+let refreshSyncRafB = 0;
+let refreshSyncTimer = 0;
+let refreshSyncLateTimer = 0;
+const runHomeRefreshSync = () => {
+  // Debounced refresh sync: one clean pass sequence, even if multiple lifecycle events fire.
+  if (refreshSyncRafA) window.cancelAnimationFrame(refreshSyncRafA);
+  if (refreshSyncRafB) window.cancelAnimationFrame(refreshSyncRafB);
+  if (refreshSyncTimer) {
+    window.clearTimeout(refreshSyncTimer);
+    refreshSyncTimer = 0;
+  }
+  if (refreshSyncLateTimer) {
+    window.clearTimeout(refreshSyncLateTimer);
+    refreshSyncLateTimer = 0;
+  }
+  refreshSyncRafA = window.requestAnimationFrame(() => {
+    refreshSyncRafA = 0;
+    refreshSyncRafB = window.requestAnimationFrame(() => {
+      refreshSyncRafB = 0;
+      dispatchHomeRefreshSync();
+    });
+  });
+  refreshSyncTimer = window.setTimeout(() => {
+    refreshSyncTimer = 0;
+    dispatchHomeRefreshSync();
+  }, 180);
+  // Late pass catches browsers that restore scroll position after load/pageshow callbacks.
+  refreshSyncLateTimer = window.setTimeout(() => {
+    refreshSyncLateTimer = 0;
+    dispatchHomeRefreshSync();
+  }, 700);
+};
+// Do NOT clear hero-fouc-pending here; it must stay until first measured sync
+// to avoid flashing an oversized/undocked Valerie title on refresh.
+window.addEventListener(
+  "load",
+  () => {
+    runHomeRefreshSync();
+  },
+  { once: true }
+);
+window.addEventListener("pageshow", () => {
+  runHomeRefreshSync();
+});
+// One post-bootstrap sync after all listeners are attached.
+window.setTimeout(runHomeRefreshSync, 0);
+
 const getSessionStorageSafe = () => {
   try {
     const store = window.sessionStorage;
@@ -731,13 +799,37 @@ const ENABLE_HERO_TITLE_SCROLL_ANIMATION = true;
 const HERO_TEXT_DARK_PROGRESS = 0.9;
 const HERO_NAV_EXTRA_SCROLL_PX = 20;
 
+const applyInitialHomeNavStateFromScroll = () => {
+  if (!topbar || !mainHeroSplit) return;
+  const navHeight = topbar.offsetHeight || 68;
+  const shouldSolid = mainHeroSplit.getBoundingClientRect().bottom <= navHeight + 1;
+  topbar.classList.remove("topbar-pop-in", "topbar-pop-out", "topbar-exit-extend");
+  topbar.classList.toggle("is-solid", shouldSolid);
+  topbar.classList.toggle("nav-sheet-visible", shouldSolid);
+  topbar.style.setProperty("--hero-nav-fade-progress", shouldSolid ? "1" : "0");
+  topbar.style.setProperty("--hero-nav-links-progress", shouldSolid ? "1" : "0");
+  topbar.style.setProperty("--hero-nav-sheet-extra", "0px");
+};
+
+// Hard reset stale nav lock state on startup/restore (prevents refresh disappearance).
+document.body.classList.remove("topbar-static-lock");
+document.body.style.removeProperty("--topbar-lock-y");
+applyInitialHomeNavStateFromScroll();
+window.addEventListener("pageshow", () => {
+  document.body.classList.remove("topbar-static-lock");
+  document.body.style.removeProperty("--topbar-lock-y");
+  applyInitialHomeNavStateFromScroll();
+});
+
 /* Nav RAF runs after floating-title layout so thresholds use the live floating clone rect.
  * Scroll coalescing: cancel prior RAF and reschedule so rapid wheel/trackpad input always
  * applies one sync per paint with the latest scroll position (consistent at any speed). */
 if (topbar && mainHeroSplit) {
   let heroNavRafId = null;
   let prevHasPassedHero = topbar.classList.contains("is-solid");
+  let navInitialHydrationDone = false;
   let topbarPopTimer = null;
+  let navRefreshStabilizeUntil = performance.now() + 900;
   let navReentryBlockedUntil = 0;
   let lastNavScrollY = window.scrollY || window.pageYOffset || 0;
   let navLastFlipAt = performance.now();
@@ -757,6 +849,17 @@ if (topbar && mainHeroSplit) {
   const NAV_FAST_SCROLL_LOCK_MS = 180;
   document.body.classList.remove("topbar-spring-in");
   document.body.classList.remove("topbar-spring-out");
+  const beginNavRefreshStabilize = () => {
+    navRefreshStabilizeUntil = performance.now() + 900;
+    navInitialHydrationDone = false;
+    if (topbarPopTimer) {
+      window.clearTimeout(topbarPopTimer);
+      topbarPopTimer = null;
+    }
+    topbar.classList.remove("topbar-pop-in", "topbar-pop-out", "topbar-exit-extend");
+    topbar.style.removeProperty("--topbar-pop-start-height");
+    topbar.style.removeProperty("--topbar-pop-end-height");
+  };
 
   const syncTopbarStyleFromHero = () => {
     // Sync floating-title geometry first so nav decisions use the live text position this frame.
@@ -765,6 +868,12 @@ if (topbar && mainHeroSplit) {
     }
     const nowTs = performance.now();
     const currentScrollY = window.scrollY || window.pageYOffset || 0;
+    const inRefreshStabilize = nowTs < navRefreshStabilizeUntil;
+    const navHeight = topbar.offsetHeight || 68;
+    const heroRectNow = mainHeroSplit.getBoundingClientRect();
+    // Hard fallback for refresh/restore: if hero is already above the nav band,
+    // force solid nav regardless of transient title geometry.
+    const passedHeroByScroll = heroRectNow.bottom <= navHeight + 1;
     const scrollDeltaSinceLastFrame = Math.abs(currentScrollY - lastNavScrollY);
     const scrollingDown = currentScrollY > lastNavScrollY + 0.4;
     const scrollingUp = currentScrollY < lastNavScrollY - 0.4;
@@ -796,16 +905,25 @@ if (topbar && mainHeroSplit) {
     if (titleBackInHero) {
       hasPassedHero = false;
     }
+    // Refresh-safe guard: scroll position wins when title geometry has not settled yet.
+    if (passedHeroByScroll) {
+      hasPassedHero = true;
+      titleBackInHero = false;
+    }
+    if (inRefreshStabilize) {
+      hasPassedHero = passedHeroByScroll;
+      titleBackInHero = !passedHeroByScroll;
+    }
     // Hold entered state briefly only when motion is effectively paused.
-    if (prevHasPassedHero && !scrollingUp && !scrollingDown && !titleBackInHero) {
+    if (!inRefreshStabilize && prevHasPassedHero && !scrollingUp && !scrollingDown && !titleBackInHero) {
       hasPassedHero = true;
     }
     // Prevent immediate threshold rebound that causes a random pop right after fade-out.
-    if (!prevHasPassedHero && nowTs < navReentryBlockedUntil) {
+    if (!inRefreshStabilize && !prevHasPassedHero && nowTs < navReentryBlockedUntil) {
       hasPassedHero = false;
     }
     // Extra anti-jitter gate: ignore micro flip-flops near threshold unless enough time/scroll has passed.
-    if (hasPassedHero !== prevHasPassedHero) {
+    if (!inRefreshStabilize && hasPassedHero !== prevHasPassedHero) {
       const scrolledSinceFlip = Math.abs(currentScrollY - navLastFlipScrollY);
       if (
         nowTs - navLastFlipAt < NAV_FLIP_LOCK_MS ||
@@ -818,17 +936,22 @@ if (topbar && mainHeroSplit) {
       }
     }
     // Prevent nav switching while user is fast-scrolling; apply the flip only after movement settles.
-    if (scrollDeltaSinceLastFrame >= NAV_FAST_SCROLL_DELTA_PX) {
+    if (!inRefreshStabilize && scrollDeltaSinceLastFrame >= NAV_FAST_SCROLL_DELTA_PX) {
       navFastScrollLockUntil = nowTs + NAV_FAST_SCROLL_LOCK_MS;
     }
     const isClearlyPastThreshold = Number.isFinite(titleCenterDeltaY)
       ? Math.abs(titleCenterDeltaY) > 26
       : false;
-    if (hasPassedHero !== prevHasPassedHero && nowTs < navFastScrollLockUntil && !isClearlyPastThreshold) {
+    if (!inRefreshStabilize && hasPassedHero !== prevHasPassedHero && nowTs < navFastScrollLockUntil && !isClearlyPastThreshold) {
       hasPassedHero = prevHasPassedHero;
     }
 
-    if (hasPassedHero !== prevHasPassedHero) {
+    if (
+      hasPassedHero !== prevHasPassedHero &&
+      navInitialHydrationDone &&
+      !inRefreshStabilize &&
+      !document.body.classList.contains("refresh-no-anim")
+    ) {
       if (topbarPopTimer) {
         window.clearTimeout(topbarPopTimer);
         topbarPopTimer = null;
@@ -863,6 +986,14 @@ if (topbar && mainHeroSplit) {
       }
     }
 
+    if (!navInitialHydrationDone) {
+      topbar.classList.remove("topbar-pop-in");
+      topbar.classList.remove("topbar-exit-extend");
+      topbar.classList.remove("topbar-pop-out");
+      topbar.style.removeProperty("--topbar-pop-start-height");
+      topbar.style.removeProperty("--topbar-pop-end-height");
+    }
+
     document.body.classList.remove("topbar-spring-in");
     document.body.classList.remove("topbar-spring-out");
 
@@ -878,7 +1009,8 @@ if (topbar && mainHeroSplit) {
 
     if (
       document.documentElement.classList.contains("hero-fouc-pending") &&
-      !heroFoucPendingCleared
+      !heroFoucPendingCleared &&
+      document.body.classList.contains("hero-float-ready")
     ) {
       heroFoucPendingCleared = true;
       window.requestAnimationFrame(() => {
@@ -890,6 +1022,7 @@ if (topbar && mainHeroSplit) {
 
     lastNavScrollY = currentScrollY;
     prevHasPassedHero = hasPassedHero;
+    navInitialHydrationDone = true;
   };
 
   const requestHeroNavSync = () => {
@@ -903,7 +1036,20 @@ if (topbar && mainHeroSplit) {
   };
 
   window.addEventListener("scroll", requestHeroNavSync, { passive: true });
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (document.body.classList.contains("refresh-no-anim")) {
+        document.body.classList.remove("refresh-no-anim");
+      }
+    },
+    { passive: true, once: true }
+  );
   window.addEventListener("resize", requestHeroNavSync);
+  window.addEventListener("home-refresh-sync", () => {
+    beginNavRefreshStabilize();
+    requestHeroNavSync();
+  });
   requestHeroNavSync();
 }
 
@@ -975,7 +1121,13 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     let springScaleXVel = 0;
     let springScaleYVel = 0;
     let sourceRectHeight = 0;
+    let lockedSourceFontPx = 0;
     let whiteNavActiveForColor = false;
+    let heroRefreshFreezeUntil = performance.now() + 1000;
+
+    const beginHeroRefreshFreeze = () => {
+      heroRefreshFreezeUntil = performance.now() + 1000;
+    };
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
     const applyFloatingTransform = (y, sx, sy) => {
@@ -1060,18 +1212,23 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     };
 
     const measure = () => {
-      floatingTitle.style.visibility = "visible";
-      floatingTitle.style.transform = "translate3d(-50%, 0px, 0) scale(1)";
-
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
       const navRect = topbar.getBoundingClientRect();
       const targetDockFontPx = HERO_DOCK_TARGET_FONT_PT * CSS_PT_TO_PX;
-      const sourceFontPx = parseFloat(getComputedStyle(heroTitleLink).fontSize) || targetDockFontPx;
+      const liveSourceFontPx =
+        parseFloat(getComputedStyle(heroTitleLink).fontSize) || targetDockFontPx;
+      if (!(lockedSourceFontPx > 0)) {
+        lockedSourceFontPx = liveSourceFontPx;
+      }
+      const sourceFontPx = lockedSourceFontPx;
       endScale = clamp(targetDockFontPx / sourceFontPx, 0.08, 0.4);
       startTop = sourceRect.top;
       sourceAbsTop = sourceRect.top + currentScrollY;
-      sourceRectHeight = sourceRect.height;
+      if (!(sourceRectHeight > 0)) {
+        sourceRectHeight = sourceRect.height;
+      }
+      const baseSourceHeight = sourceRectHeight > 0 ? sourceRectHeight : sourceRect.height;
       {
         // Dock to the fixed nav-bar center to keep hero text independent from link collapse.
         const navCenterY = navRect.top + navRect.height * 0.5;
@@ -1081,12 +1238,12 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
         const endpointScrollY =
           heroBottomAbs -
           HERO_TITLE_BOTTOM_GAP_END_PX -
-          sourceRect.height * endScaleY * 0.5 +
+          baseSourceHeight * endScaleY * 0.5 +
           HERO_DOCK_Y_OFFSET_PX -
           navCenterY;
         dockTop =
           navCenterY -
-          sourceRect.height * endScaleY * 0.5;
+          baseSourceHeight * endScaleY * 0.5;
         dockScrollY = Math.max(1, endpointScrollY);
       }
       /* Stay hidden until syncFloatingTitle applies transform (avoid flash at top:0). */
@@ -1098,8 +1255,10 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     };
 
     const syncFloatingTitleCore = () => {
+      const inRefreshFreeze = performance.now() < heroRefreshFreezeUntil;
       const currentScrollY = window.scrollY || window.pageYOffset || 0;
       const sourceRect = heroTitle.getBoundingClientRect();
+      const baseTitleHeight = sourceRectHeight > 0 ? sourceRectHeight : sourceRect.height;
       const navRect = topbar.getBoundingClientRect();
       const scalePLinear = clamp(currentScrollY / dockScrollY, 0, 1);
       const scaleP =
@@ -1142,15 +1301,15 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const heroRect = mainHeroSplit.getBoundingClientRect();
 
       const heroAnchoredTop =
-        heroRect.bottom - targetHeroBottomGap - sourceRect.height * scaleY;
+        heroRect.bottom - targetHeroBottomGap - baseTitleHeight * scaleY;
       /* Dock to fixed nav-bar center so title is independent from nav-link collapse motion. */
       const navDockCenterY = navRect.top + navRect.height * 0.5;
       const dockTopLive =
         navDockCenterY -
-        (sourceRect.height * scaleY) * 0.5;
+        (baseTitleHeight * scaleY) * 0.5;
       // Never let enlarged Valerie leave the periwinkle section.
       const boundaryTop =
-        heroRect.bottom - HERO_MAX_EDGE_LIFT_PX - sourceRect.height * scaleY;
+        heroRect.bottom - HERO_MAX_EDGE_LIFT_PX - baseTitleHeight * scaleY;
       const constrainedHeroTop = Math.min(heroAnchoredTop, boundaryTop);
       const dockBlendLinear = clamp(
         (scaleP - HERO_DOCK_BLEND_START) / (1 - HERO_DOCK_BLEND_START),
@@ -1187,7 +1346,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       }
       springInit = true;
       springY = clampedY;
-      if (!Number.isFinite(springScaleX) || !Number.isFinite(springScaleY)) {
+      if (inRefreshFreeze || !Number.isFinite(springScaleX) || !Number.isFinite(springScaleY)) {
         springScaleX = springTargetScaleX;
         springScaleY = springTargetScaleY;
       } else {
@@ -1252,10 +1411,8 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       });
     }
 
-    window.addEventListener("load", () => {
-      window.requestAnimationFrame(remeasureAndSyncFloatingTitle);
-    });
-    window.addEventListener("pageshow", () => {
+    window.addEventListener("home-refresh-sync", () => {
+      beginHeroRefreshFreeze();
       window.requestAnimationFrame(remeasureAndSyncFloatingTitle);
     });
     window.addEventListener("resize", () => {
@@ -1270,7 +1427,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
 
 if (topbar && preRect) {
   let ticking = false;
-  let isLocked = false;
+  let isLocked = document.body.classList.contains("topbar-static-lock");
 
   const syncTopbarAndOliveBar = () => {
     const navHeight = topbar.offsetHeight || 0;
@@ -1283,8 +1440,9 @@ if (topbar && preRect) {
       document.body.style.setProperty("--topbar-lock-y", `${window.scrollY}px`);
       document.body.classList.add("topbar-static-lock");
       isLocked = true;
-    } else if (!shouldLockTopbar && isLocked) {
+    } else if (!shouldLockTopbar && (isLocked || document.body.classList.contains("topbar-static-lock"))) {
       document.body.classList.remove("topbar-static-lock");
+      document.body.style.removeProperty("--topbar-lock-y");
       isLocked = false;
     }
 
@@ -1300,9 +1458,16 @@ if (topbar && preRect) {
     window.requestAnimationFrame(syncTopbarAndOliveBar);
   };
 
+  const requestSyncBurst = () => {
+    requestSync();
+    window.setTimeout(requestSync, 60);
+    window.setTimeout(requestSync, 180);
+    window.setTimeout(requestSync, 420);
+  };
+
   window.addEventListener("scroll", requestSync, { passive: true });
   window.addEventListener("resize", requestSync);
-  requestSync();
+  requestSyncBurst();
 }
 
 const collectionSection = document.getElementById("collection");

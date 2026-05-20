@@ -23,11 +23,15 @@ opacity: 0 !important;
 visibility: hidden !important;
 pointer-events: none !important;
 }
+html.hero-fouc-pending body.page-home #heroTitle {
+opacity: 0 !important;
+visibility: hidden !important;
+}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400;1,600&family=Montserrat:wght@300;400;500;700&family=Playfair+Display:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=1396">
+<link rel="stylesheet" href="css/styles.css?v=1399">
 </head>
 <body class="page-home">
 
@@ -278,23 +282,20 @@ Receive updates across new collections and collaborations
 </div>
 </section>
 
-<section id="contact" class="section contact">
-<div class="contact__bar">
-<div class="contact__info">
-<p class="contact__label">Contact</p>
-<a class="contact__email" href="mailto:gonzalez@alumni.cooper.edu">gonzalez@alumni.cooper.edu</a>
-<div class="contact__links">
-<a class="contact__link" href="#home">Home</a>
-<a class="contact__link" href="#collection">Collection</a>
-</div>
-</div>
-</div>
-<div class="bottom-bar">
-<span class="bottom-bar__year" id="year"></span>
+<section id="contact" class="milton-contact-footer" aria-label="Contact details">
+<div class="milton-contact-footer__inner">
+<p class="milton-contact-footer__mark">
+<img class="milton-contact-footer__mark-img" src="images/v_123.png" alt="v123" decoding="async" draggable="false" style="-webkit-user-drag: none; user-select: none;">
+</p>
+<a class="milton-contact-footer__line" href="mailto:info@miltontextiles.com">info@miltontextiles.com</a>
+<p class="milton-contact-footer__line"><a href="#home">Instagram</a><span aria-hidden="true">•</span><a href="#collection">Pinterest</a></p>
+<p class="milton-contact-footer__line">Made in the USA</p>
+<p class="milton-contact-footer__line">Site by G&amp;W</p>
+<p class="milton-contact-footer__copyright">All Rights Reserved &copy; <span id="year"></span> Milton Textiles</p>
 </div>
 </section>
 <script src="js/image-protect.js?v=1"></script>
-<script src="js/main.js?v=490"></script>
+<script src="js/main.js?v=492"></script>
 
 </body>
 </html>
