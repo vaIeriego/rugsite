@@ -29,6 +29,32 @@ const isRefreshLikeLoad = !!(
 if (isRefreshLikeLoad) {
   document.body.classList.add("refresh-no-anim");
 }
+const isHomePage = document.body.classList.contains("page-home");
+if (isHomePage && isRefreshLikeLoad) {
+  // Prevent browser from restoring stale deep scroll on reload.
+  try {
+    if ("scrollRestoration" in window.history) {
+      window.history.scrollRestoration = "manual";
+    }
+  } catch (_err) {
+    // no-op
+  }
+  if (window.location.hash === "#contact") {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }
+  const forceTopAfterRefresh = () => {
+    window.scrollTo({ top: 0, behavior: "auto" });
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    });
+    window.setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    }, 180);
+  };
+  forceTopAfterRefresh();
+  window.addEventListener("load", forceTopAfterRefresh, { once: true });
+  window.addEventListener("pageshow", forceTopAfterRefresh, { once: true });
+}
 
 const clearHeroFoucPending = () => {
   document.documentElement.classList.remove("hero-fouc-pending");
@@ -2123,9 +2149,6 @@ if (topbarResumeLink) {
   topbarResumeLink.addEventListener("click", (e) => {
     e.preventDefault();
     scrollContactToTopThen(() => {
-      if (window.location.hash !== "#contact") {
-        window.history.replaceState(null, "", "#contact");
-      }
       ensureResumeIsOpen();
     });
   });
@@ -2156,10 +2179,15 @@ const initPostHeroScrollReveal = () => {
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const revealTargets = [];
+  const IMAGE_TO_TEXT_DELAY_MS = 500;
+  const TRADITIONAL_EXTRA_TEXT_DELAY_MS = 900;
 
-  const addRevealItem = (node, delayMs) => {
+  const addRevealItem = (node, delayMs, options = {}) => {
     if (!node || node.nodeType !== 1 || node.classList.contains("scroll-reveal")) return;
     node.classList.add("scroll-reveal");
+    if (options.noLift) {
+      node.classList.add("scroll-reveal-no-lift");
+    }
     node.style.setProperty("--reveal-delay", `${Math.max(0, delayMs)}ms`);
     revealTargets.push(node);
   };
@@ -2167,14 +2195,68 @@ const initPostHeroScrollReveal = () => {
   for (let block = heroSplit.nextElementSibling; block; block = block.nextElementSibling) {
     if (block.matches("nav#navOverlay, nav.nav-overlay")) continue;
     if (!block.matches("section, footer")) continue;
-    const directChildren = Array.from(block.children).filter((el) => el.nodeType === 1);
-    const revealNodes = block.classList.contains("hero-follow-image")
-      ? directChildren
-      : directChildren.length > 1
-        ? directChildren.slice(0, 6)
-        : [block];
+    if (block.id === "collection") continue;
 
-    revealNodes.forEach((el, i) => addRevealItem(el, i * 95));
+    if (block.classList.contains("hero-follow-image")) {
+      const revealNodes = [];
+      const addIfFound = (selector) => {
+        const node = block.querySelector(selector);
+        if (node) revealNodes.push(node);
+      };
+
+      addIfFound(".hero-follow-image__mark");
+      addIfFound(".hero-follow-image__sub");
+      addIfFound(".hero-follow-image__contact");
+      addIfFound(".hero-square-carousel");
+
+      const traditionalLayout = block.querySelector(".hero-traditional-layout");
+      if (traditionalLayout) {
+        const traditionalRects = traditionalLayout.querySelector(".hero-square-carousel__diag-stack");
+        const traditionalText = traditionalLayout.querySelector(".hero-square-carousel__kees");
+        if (traditionalRects) {
+          addRevealItem(traditionalRects, 0);
+        }
+        if (traditionalText) {
+          addRevealItem(
+            traditionalText,
+            traditionalRects ? IMAGE_TO_TEXT_DELAY_MS + TRADITIONAL_EXTRA_TEXT_DELAY_MS : 0,
+            { noLift: true }
+          );
+        }
+        if (!traditionalRects && !traditionalText) revealNodes.push(traditionalLayout);
+      }
+
+      const collectionsWrap = block.querySelector(".hero-square-carousel-collections");
+      if (collectionsWrap) {
+        const collectionSections = Array.from(collectionsWrap.children).filter(
+          (el) => el.nodeType === 1 && el.matches("section")
+        );
+        collectionSections.forEach((section) => {
+          const pieces = Array.from(section.children).filter((el) => el.nodeType === 1);
+          if (pieces.length) {
+            const imagePiece = pieces.find((el) => String(el.className || "").includes("image-wrap")) || null;
+            const textPiece = pieces.find((el) => String(el.className || "").includes("-text")) || null;
+
+            if (imagePiece) addRevealItem(imagePiece, 0);
+            if (textPiece) addRevealItem(textPiece, imagePiece ? IMAGE_TO_TEXT_DELAY_MS : 0);
+
+            const extraPieces = pieces.filter((el) => el !== imagePiece && el !== textPiece);
+            extraPieces.forEach((piece, idx) => addRevealItem(piece, (imagePiece ? IMAGE_TO_TEXT_DELAY_MS : 0) + 70 * (idx + 1)));
+          } else {
+            addRevealItem(section, 0);
+          }
+        });
+      } else {
+        addIfFound(".hero-square-carousel-collections");
+      }
+
+      revealNodes.forEach((el, i) => addRevealItem(el, i * 80));
+      continue;
+    }
+
+    const directChildren = Array.from(block.children).filter((el) => el.nodeType === 1);
+    const revealNodes = directChildren.length > 1 ? directChildren.slice(0, 6) : [block];
+    revealNodes.forEach((el, i) => addRevealItem(el, i * 80));
   }
 
   if (!revealTargets.length) return;
@@ -2193,8 +2275,8 @@ const initPostHeroScrollReveal = () => {
       });
     },
     {
-      threshold: 0.16,
-      rootMargin: "0px 0px -9% 0px",
+      threshold: 0.001,
+      rootMargin: "0px 0px -2% 0px",
     }
   );
 

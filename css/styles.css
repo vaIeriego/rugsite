@@ -2703,8 +2703,8 @@ body.olive-follow-active .contact__split-right {
   opacity: 0;
   transform: translate3d(0, 30px, 0);
   transition:
-    opacity 1s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 1s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
   transition-delay: var(--reveal-delay, 0ms);
   will-change: opacity, transform;
 }
@@ -2712,6 +2712,16 @@ body.olive-follow-active .contact__split-right {
 .scroll-reveal.is-revealed {
   opacity: 1;
   transform: translate3d(0, 0, 0);
+}
+
+/* Fade-only reveal target: no translate channel, opacity only. */
+.scroll-reveal.scroll-reveal-no-lift,
+.scroll-reveal.scroll-reveal-no-lift.is-revealed {
+  transform: none !important;
+}
+
+.scroll-reveal.scroll-reveal-no-lift {
+  transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3550,8 +3560,8 @@ body.page-home .hero-square-carousel__collection-two-text.scroll-reveal > * {
   opacity: 0;
   transform: translate3d(0, 20px, 0) scale(0.985);
   transition:
-    opacity 0.95s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.95s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revealed > * {
@@ -3559,10 +3569,10 @@ body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revea
   transform: translate3d(0, 0, 0) scale(1);
 }
 
-body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revealed > :nth-child(1) { transition-delay: 40ms; }
-body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revealed > :nth-child(2) { transition-delay: 90ms; }
-body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revealed > :nth-child(3) { transition-delay: 150ms; }
-body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revealed > :nth-child(4) { transition-delay: 230ms; }
+body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revealed > :nth-child(1) { transition-delay: 0ms; }
+body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revealed > :nth-child(2) { transition-delay: 70ms; }
+body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revealed > :nth-child(3) { transition-delay: 140ms; }
+body.page-home .hero-square-carousel__collection-two-text.scroll-reveal.is-revealed > :nth-child(4) { transition-delay: 210ms; }
 
 body.page-home .hero-square-carousel__collection-two-image-wrap,
 body.page-home .hero-square-carousel__collection-three-image-wrap,
@@ -3608,8 +3618,8 @@ body.page-home .hero-square-carousel__collection-two-image {
   transform: translate3d(0, var(--floral-image-offset-y, -500px), 0) scale(var(--floral-image-scale, 1));
   opacity: 0.98;
   transition:
-    opacity 1.05s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 1.05s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 body.page-home .hero-square-carousel__collection-three-image {
@@ -3645,7 +3655,7 @@ body.page-home .hero-square-carousel__collection-four-text {
 
 body.page-home .hero-square-carousel__collection-two-image-wrap.scroll-reveal .hero-square-carousel__collection-two-image {
   opacity: 0;
-  transform: translate3d(0, calc(var(--floral-image-offset-y, -500px) + 30px), 0) scale(1.182);
+  transform: translate3d(0, calc(var(--floral-image-offset-y, -500px) + 30px), 0) scale(var(--floral-image-scale, 1));
 }
 
 body.page-home .hero-square-carousel__collection-two-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__collection-two-image {
@@ -3666,8 +3676,8 @@ body.page-home .hero-square-carousel__floral-block {
   opacity: 0.84;
   transform: translate3d(0, 24px, 0) scale(0.96);
   transition:
-    opacity 1.06s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 1.06s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 body.page-home .hero-square-carousel__floral-block--violet {
@@ -3707,19 +3717,19 @@ body.page-home .hero-square-carousel__collection-two-image-wrap.scroll-reveal.is
 }
 
 body.page-home .hero-square-carousel__collection-two-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__floral-block--violet {
-  transition-delay: 60ms;
+  transition-delay: 50ms;
 }
 
 body.page-home .hero-square-carousel__collection-two-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__floral-block--red {
-  transition-delay: 130ms;
+  transition-delay: 110ms;
 }
 
 body.page-home .hero-square-carousel__collection-two-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__floral-block--pink {
-  transition-delay: 190ms;
+  transition-delay: 170ms;
 }
 
 body.page-home .hero-square-carousel__collection-two-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__floral-block--lavender {
-  transition-delay: 250ms;
+  transition-delay: 230ms;
 }
 
 /* Isolated Floral section replica (locks against shared collection overrides) */
@@ -3766,15 +3776,15 @@ body.page-home .hero-square-carousel__matisse-block {
   opacity: 0.84;
   transform: translate3d(0, 24px, 0) scale(0.96);
   transition:
-    opacity 1.06s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 1.06s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 body.page-home .hero-square-carousel__geo-block--green {
   right: -7%;
   top: -4%;
-  width: 46%;
-  height: 32%;
+  width: calc(46% + 50px);
+  height: 64%;
   background: rgba(41, 128, 57, 0.88);
 }
 
@@ -3833,13 +3843,13 @@ body.page-home .hero-square-carousel__collection-five-image-wrap.scroll-reveal.i
   transform: translate3d(0, 0, 0) scale(1);
 }
 
-body.page-home .hero-square-carousel__collection-three-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__geo-block--green { transition-delay: 80ms; }
-body.page-home .hero-square-carousel__collection-three-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__geo-block--purple { transition-delay: 160ms; }
-body.page-home .hero-square-carousel__collection-four-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__hopper-block--sand { transition-delay: 70ms; }
-body.page-home .hero-square-carousel__collection-four-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__hopper-block--blue { transition-delay: 140ms; }
-body.page-home .hero-square-carousel__collection-four-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__hopper-block--magenta { transition-delay: 220ms; }
-body.page-home .hero-square-carousel__collection-five-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__matisse-block--blue { transition-delay: 90ms; }
-body.page-home .hero-square-carousel__collection-five-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__matisse-block--pink { transition-delay: 190ms; }
+body.page-home .hero-square-carousel__collection-three-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__geo-block--green { transition-delay: 60ms; }
+body.page-home .hero-square-carousel__collection-three-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__geo-block--purple { transition-delay: 120ms; }
+body.page-home .hero-square-carousel__collection-four-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__hopper-block--sand { transition-delay: 60ms; }
+body.page-home .hero-square-carousel__collection-four-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__hopper-block--blue { transition-delay: 120ms; }
+body.page-home .hero-square-carousel__collection-four-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__hopper-block--magenta { transition-delay: 180ms; }
+body.page-home .hero-square-carousel__collection-five-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__matisse-block--blue { transition-delay: 60ms; }
+body.page-home .hero-square-carousel__collection-five-image-wrap.scroll-reveal.is-revealed .hero-square-carousel__matisse-block--pink { transition-delay: 120ms; }
 
 body.page-home .milton-signup {
   width: 100%;
@@ -3912,6 +3922,7 @@ body.page-home .milton-signup__button {
 body.page-home .milton-contact-footer {
   width: 100%;
   min-height: clamp(180px, 44vw, 360px);
+  margin-top: 30px;
   background: #aabcbc;
   display: grid;
   place-items: center;
