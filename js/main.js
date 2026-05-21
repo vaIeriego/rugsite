@@ -822,13 +822,19 @@ const mainHeroSplit = document.querySelector(
 const preRect = document.querySelector(".contact__pre-rect");
 const heroTitle = document.getElementById("heroTitle");
 const ENABLE_HERO_TITLE_SCROLL_ANIMATION = true;
+const IS_TRADITIONAL_PAGE = document.body.classList.contains("page-traditional");
+const TRADITIONAL_NAV_START_Y = 1;
+const TRADITIONAL_NAV_RAMP_PX = 30;
 const HERO_TEXT_DARK_PROGRESS = 0.9;
 const HERO_NAV_EXTRA_SCROLL_PX = 20;
 
 const applyInitialHomeNavStateFromScroll = () => {
   if (!topbar || !mainHeroSplit) return;
   const navHeight = topbar.offsetHeight || 68;
-  const shouldSolid = mainHeroSplit.getBoundingClientRect().bottom <= navHeight + 1;
+  const topY = window.scrollY || window.pageYOffset || 0;
+  const shouldSolid = IS_TRADITIONAL_PAGE
+    ? topY > TRADITIONAL_NAV_START_Y
+    : mainHeroSplit.getBoundingClientRect().bottom <= navHeight + 1;
   topbar.classList.remove("topbar-pop-in", "topbar-pop-out", "topbar-exit-extend");
   topbar.classList.toggle("is-solid", shouldSolid);
   topbar.classList.toggle("nav-sheet-visible", shouldSolid);
@@ -935,60 +941,67 @@ if (topbar && mainHeroSplit) {
         hasPassedHero = titleCenterY <= rowCenterY + LINK_BAND_EXIT_SLACK_PX;
       } else {
         hasPassedHero = titleCenterY <= rowCenterY + LINK_BAND_ENTER_SLACK_PX;
+        titleBackInHero = titleCenterY > rowCenterY + LINK_BAND_EXIT_SLACK_PX;
       }
-      titleBackInHero = titleCenterY > rowCenterY + LINK_BAND_EXIT_SLACK_PX;
     }
-
+    if (IS_TRADITIONAL_PAGE) {
+      // Traditional: trigger as soon as user scrolls down from top.
+      hasPassedHero = currentScrollY > TRADITIONAL_NAV_START_Y;
+      titleBackInHero = !hasPassedHero;
+    }
     // If title is back in hero band, always unsolid.
     if (titleBackInHero) {
       hasPassedHero = false;
     }
-    // Refresh-safe guard: scroll position wins when title geometry has not settled yet.
-    if (passedHeroByScroll) {
-      hasPassedHero = true;
-      titleBackInHero = false;
-    }
-    if (inRefreshStabilize) {
-      hasPassedHero = passedHeroByScroll;
-      titleBackInHero = !passedHeroByScroll;
-    }
-    // Hold entered state briefly only when motion is effectively paused.
-    if (!inRefreshStabilize && prevHasPassedHero && !scrollingUp && !scrollingDown && !titleBackInHero) {
-      hasPassedHero = true;
-    }
-    // Prevent immediate threshold rebound that causes a random pop right after fade-out.
-    if (!inRefreshStabilize && !prevHasPassedHero && nowTs < navReentryBlockedUntil) {
-      hasPassedHero = false;
-    }
-    // Extra anti-jitter gate: ignore micro flip-flops near threshold unless enough time/scroll has passed.
-    if (!inRefreshStabilize && hasPassedHero !== prevHasPassedHero) {
-      const scrolledSinceFlip = Math.abs(currentScrollY - navLastFlipScrollY);
-      if (
-        nowTs - navLastFlipAt < NAV_FLIP_LOCK_MS ||
-        scrolledSinceFlip < NAV_MIN_SCROLL_DELTA_PX
-      ) {
-        hasPassedHero = prevHasPassedHero;
-      } else {
-        navLastFlipAt = nowTs;
-        navLastFlipScrollY = currentScrollY;
+    if (!IS_TRADITIONAL_PAGE) {
+      // Refresh-safe guard: scroll position wins when title geometry has not settled yet.
+      if (passedHeroByScroll) {
+        hasPassedHero = true;
+        titleBackInHero = false;
       }
-    }
-    // Prevent nav switching while user is fast-scrolling; apply the flip only after movement settles.
-    if (!inRefreshStabilize && scrollDeltaSinceLastFrame >= NAV_FAST_SCROLL_DELTA_PX) {
-      navFastScrollLockUntil = nowTs + NAV_FAST_SCROLL_LOCK_MS;
-    }
-    const isClearlyPastThreshold = Number.isFinite(titleCenterDeltaY)
-      ? Math.abs(titleCenterDeltaY) > 26
-      : false;
-    if (!inRefreshStabilize && hasPassedHero !== prevHasPassedHero && nowTs < navFastScrollLockUntil && !isClearlyPastThreshold) {
-      hasPassedHero = prevHasPassedHero;
+      if (inRefreshStabilize) {
+        hasPassedHero = passedHeroByScroll;
+        titleBackInHero = !passedHeroByScroll;
+      }
+      // Hold entered state briefly only when motion is effectively paused.
+      if (!inRefreshStabilize && prevHasPassedHero && !scrollingUp && !scrollingDown && !titleBackInHero) {
+        hasPassedHero = true;
+      }
+      // Prevent immediate threshold rebound that causes a random pop right after fade-out.
+      if (!inRefreshStabilize && !prevHasPassedHero && nowTs < navReentryBlockedUntil) {
+        hasPassedHero = false;
+      }
+      // Extra anti-jitter gate: ignore micro flip-flops near threshold unless enough time/scroll has passed.
+      if (!inRefreshStabilize && hasPassedHero !== prevHasPassedHero) {
+        const scrolledSinceFlip = Math.abs(currentScrollY - navLastFlipScrollY);
+        if (
+          nowTs - navLastFlipAt < NAV_FLIP_LOCK_MS ||
+          scrolledSinceFlip < NAV_MIN_SCROLL_DELTA_PX
+        ) {
+          hasPassedHero = prevHasPassedHero;
+        } else {
+          navLastFlipAt = nowTs;
+          navLastFlipScrollY = currentScrollY;
+        }
+      }
+      // Prevent nav switching while user is fast-scrolling; apply the flip only after movement settles.
+      if (!inRefreshStabilize && scrollDeltaSinceLastFrame >= NAV_FAST_SCROLL_DELTA_PX) {
+        navFastScrollLockUntil = nowTs + NAV_FAST_SCROLL_LOCK_MS;
+      }
+      const isClearlyPastThreshold = Number.isFinite(titleCenterDeltaY)
+        ? Math.abs(titleCenterDeltaY) > 26
+        : false;
+      if (!inRefreshStabilize && hasPassedHero !== prevHasPassedHero && nowTs < navFastScrollLockUntil && !isClearlyPastThreshold) {
+        hasPassedHero = prevHasPassedHero;
+      }
     }
 
     if (
       hasPassedHero !== prevHasPassedHero &&
       navInitialHydrationDone &&
       !inRefreshStabilize &&
-      !document.body.classList.contains("refresh-no-anim")
+      !document.body.classList.contains("refresh-no-anim") &&
+      !IS_TRADITIONAL_PAGE
     ) {
       if (topbarPopTimer) {
         window.clearTimeout(topbarPopTimer);
@@ -997,10 +1010,12 @@ if (topbar && mainHeroSplit) {
       if (hasPassedHero) {
         const heroRect = mainHeroSplit.getBoundingClientRect();
         const navRect = topbar.getBoundingClientRect();
-        const popStartHeightPx = Math.max(
-          Math.round(heroRect.bottom + 20 - navRect.top),
-          Math.round((topbar.offsetHeight || 68) + 15)
-        );
+        const popStartHeightPx = IS_TRADITIONAL_PAGE
+          ? Math.round((topbar.offsetHeight || 68) + 15)
+          : Math.max(
+              Math.round(heroRect.bottom + 20 - navRect.top),
+              Math.round((topbar.offsetHeight || 68) + 15)
+            );
         topbar.style.setProperty("--topbar-pop-start-height", `${popStartHeightPx}px`);
         topbar.classList.remove("topbar-exit-extend");
         topbar.classList.remove("topbar-pop-out");
@@ -1031,7 +1046,15 @@ if (topbar && mainHeroSplit) {
       topbar.style.removeProperty("--topbar-pop-start-height");
       topbar.style.removeProperty("--topbar-pop-end-height");
     }
-
+    if (IS_TRADITIONAL_PAGE) {
+      if (topbarPopTimer) {
+        window.clearTimeout(topbarPopTimer);
+        topbarPopTimer = null;
+      }
+      topbar.classList.remove("topbar-pop-in", "topbar-pop-out", "topbar-exit-extend");
+      topbar.style.removeProperty("--topbar-pop-start-height");
+      topbar.style.removeProperty("--topbar-pop-end-height");
+    }
     document.body.classList.remove("topbar-spring-in");
     document.body.classList.remove("topbar-spring-out");
 
@@ -1308,6 +1331,76 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const sourceRect = heroTitle.getBoundingClientRect();
       const baseTitleHeight = sourceRectHeight > 0 ? sourceRectHeight : sourceRect.height;
       const navRect = topbar.getBoundingClientRect();
+
+      if (IS_TRADITIONAL_PAGE) {
+        const navLiftProgress = clamp(
+          (currentScrollY - TRADITIONAL_NAV_START_Y) / TRADITIONAL_NAV_RAMP_PX,
+          0,
+          1
+        );
+        const dockOffsetPx = getHeroDockOffsetPx();
+        // Keep top state only slightly larger than docked size on Traditional.
+        const topFontPt = HERO_DOCK_TARGET_FONT_PT + 1;
+        const topScale = clamp((topFontPt * CSS_PT_TO_PX) / lockedSourceFontPx, 0.08, 0.46);
+        const fixedScale = topScale + (endScale - topScale) * navLiftProgress;
+        const fixedScaleX = fixedScale * horizontalSquish;
+        const fixedScaleY = fixedScale * verticalStretch;
+        const navDockCenterY = navRect.top + navRect.height * 0.5;
+        const dockTopLive = navDockCenterY - (baseTitleHeight * fixedScaleY) * 0.5;
+        const dockY = dockTopLive + dockOffsetPx;
+        const navFadeProgress = navLiftProgress;
+        // Stronger visible expand/collapse on Traditional.
+        const navSheetExtraPx = (1 - navLiftProgress) * 40;
+        // Keep links visible but allow more obvious travel during collapse/expand.
+        const navLinksLiftProgress = clamp(0.35 + navLiftProgress * 0.65, 0, 1);
+        const navIsSolid = navFadeProgress > 0.001;
+
+        if (springRaf) {
+          window.cancelAnimationFrame(springRaf);
+          springRaf = 0;
+          springLastTs = 0;
+        }
+        springInit = true;
+        springTargetY = dockY;
+        springTargetScaleX = fixedScaleX;
+        springTargetScaleY = fixedScaleY;
+        springY = dockY;
+        springScaleX = fixedScaleX;
+        springScaleY = fixedScaleY;
+
+        whiteNavActiveForColor = navIsSolid;
+        topbar.classList.toggle("nav-sheet-visible", navIsSolid);
+        topbar.style.setProperty(
+          "--hero-nav-collapse-progress",
+          navLiftProgress.toFixed(4)
+        );
+        topbar.style.setProperty(
+          "--hero-nav-lift-progress",
+          navLiftProgress.toFixed(4)
+        );
+        topbar.style.setProperty(
+          "--hero-nav-links-progress",
+          navLinksLiftProgress.toFixed(4)
+        );
+        topbar.style.setProperty(
+          "--hero-nav-fade-progress",
+          navFadeProgress.toFixed(4)
+        );
+        topbar.style.setProperty(
+          "--hero-nav-sheet-extra",
+          `${navSheetExtraPx.toFixed(2)}px`
+        );
+
+        applyFloatingTransform(dockY, fixedScaleX, fixedScaleY);
+        floatingTitle.style.visibility = "visible";
+        floatingTitle.style.opacity = "1";
+        floatingTitle.classList.add("is-layout-ready");
+        document.body.classList.add("hero-float-ready");
+        floatingTitle.style.removeProperty("opacity");
+        floatingTitle.style.removeProperty("visibility");
+        updateFloatingTitleColor();
+        return;
+      }
       const scalePLinear = clamp(currentScrollY / dockScrollY, 0, 1);
       const scaleP =
         1 -

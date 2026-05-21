@@ -4117,6 +4117,42 @@ body.page-home .milton-contact-footer__copyright {
   line-height: 1.8;
 }
 
+body.page-home.page-traditional .split--traditional-landing {
+  height: calc(min(90vh, 760px) + 139px);
+  min-height: 779px;
+  position: relative;
+  overflow: hidden;
+  background: #a4a9ea;
+}
+
+/* Traditional safety fallback: keep nav visible even if JS timing lags. */
+body.page-home.page-traditional .topbar {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+body.page-home.page-traditional .topbar__nav-left,
+body.page-home.page-traditional .topbar__nav-right {
+  display: flex !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+body.page-home.page-traditional .topbar__hamburger {
+  display: none !important;
+}
+
+body.page-traditional .split__rugs--traditional {
+  position: absolute;
+  inset: 0;
+  background: #a4a9ea;
+}
+
+body.page-traditional .hero-follow-image--traditional-intro {
+  min-height: clamp(220px, 22vw, 320px);
+  padding-top: clamp(46px, 6vw, 84px);
+}
+
 @media (max-width: 980px) {
   body.page-home {
     min-width: 1360px;
@@ -4126,6 +4162,11 @@ body.page-home .milton-contact-footer__copyright {
   body.page-home .split {
     min-height: 522px;
     height: calc(80vh + 2px);
+  }
+
+  body.page-home.page-traditional .split--traditional-landing {
+    height: calc(min(90vh, 760px) + 139px);
+    min-height: 779px;
   }
 
   body.page-home .topbar {
@@ -4196,5 +4237,17 @@ body.page-home .milton-contact-footer__copyright {
   body.page-home .topbar__hamburger .hamburger__line:nth-child(1),
   body.page-home .topbar__hamburger .hamburger__line:nth-child(2) {
     width: 22px;
+  }
+
+  /* Traditional page keeps full nav links visible (no hamburger replacement). */
+  body.page-home.page-traditional .topbar__nav-left,
+  body.page-home.page-traditional .topbar__nav-right {
+    display: flex !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  body.page-home.page-traditional .topbar__hamburger {
+    display: none !important;
   }
 }
