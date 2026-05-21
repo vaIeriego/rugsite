@@ -912,12 +912,24 @@ if (topbar && mainHeroSplit) {
     const titleForAlign = floatingTitleLive || heroTitle;
     /* Full About | Contact | Resume row — same vertical band you align to when scrolling. */
     const navRightRow = topbar.querySelector(".topbar__nav-right");
+    const navRectForAlign = topbar.getBoundingClientRect();
+    let linkBandCenterY = navRectForAlign.top + navRectForAlign.height * 0.5;
+    if (navRightRow) {
+      const rowRectCandidate = navRightRow.getBoundingClientRect();
+      const rowIsVisible =
+        rowRectCandidate.width > 1 &&
+        rowRectCandidate.height > 1 &&
+        getComputedStyle(navRightRow).display !== "none" &&
+        getComputedStyle(navRightRow).visibility !== "hidden";
+      if (rowIsVisible) {
+        linkBandCenterY = rowRectCandidate.top + rowRectCandidate.height * 0.5;
+      }
+    }
 
-    if (titleForAlign && navRightRow) {
+    if (titleForAlign) {
       const titleRect = titleForAlign.getBoundingClientRect();
-      const rowRect = navRightRow.getBoundingClientRect();
       const titleCenterY = titleRect.top + titleRect.height * 0.5;
-      const rowCenterY = rowRect.top + rowRect.height * 0.5;
+      const rowCenterY = linkBandCenterY;
       titleCenterDeltaY = titleCenterY - rowCenterY;
       if (prevHasPassedHero) {
         hasPassedHero = titleCenterY <= rowCenterY + LINK_BAND_EXIT_SLACK_PX;
@@ -1119,6 +1131,8 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     const HERO_NAV_SCROLL_COLLAPSE_WINDOW = 0.26;
     /** Fine tune docked title vertical position in navbar (positive moves down). */
     const HERO_DOCK_Y_OFFSET_PX = 0;
+    /** Extra dock offset when nav links are hidden (hamburger mode). */
+    const HERO_DOCK_COMPACT_EXTRA_Y_PX = 6;
     /** Maximum allowed lift above periwinkle section bottom before docking. */
     const HERO_MAX_EDGE_LIFT_PX = 20;
     const CSS_PT_TO_PX = 96 / 72;
@@ -1156,6 +1170,13 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
     };
 
     const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const getHeroDockOffsetPx = () => {
+      const navRightRow = topbar.querySelector(".topbar__nav-right");
+      const compactNavActive =
+        !!navRightRow &&
+        getComputedStyle(navRightRow).display === "none";
+      return HERO_DOCK_Y_OFFSET_PX + (compactNavActive ? HERO_DOCK_COMPACT_EXTRA_Y_PX : 0);
+    };
     const applyFloatingTransform = (y, sx, sy) => {
       floatingTitle.style.transform = `translate3d(-50%, ${y.toFixed(2)}px, 0) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
     };
@@ -1256,6 +1277,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       }
       const baseSourceHeight = sourceRectHeight > 0 ? sourceRectHeight : sourceRect.height;
       {
+        const dockOffsetPx = getHeroDockOffsetPx();
         // Dock to the fixed nav-bar center to keep hero text independent from link collapse.
         const navCenterY = navRect.top + navRect.height * 0.5;
         const heroBottomAbs = mainHeroSplit.getBoundingClientRect().bottom + currentScrollY;
@@ -1265,7 +1287,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
           heroBottomAbs -
           HERO_TITLE_BOTTOM_GAP_END_PX -
           baseSourceHeight * endScaleY * 0.5 +
-          HERO_DOCK_Y_OFFSET_PX -
+          dockOffsetPx -
           navCenterY;
         dockTop =
           navCenterY -
@@ -1321,6 +1343,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const whiteNavVisibleNow = isSolidNow || navFadeProgress > 0.001;
       whiteNavActiveForColor = whiteNavVisibleNow;
       topbar.classList.toggle("nav-sheet-visible", navFadeProgress > 0.01);
+      const dockOffsetPx = getHeroDockOffsetPx();
       const scale = 1 + (endScale - 1) * scaleEase;
       const scaleX = scale * horizontalSquish;
       const scaleY = scale * verticalStretch;
@@ -1345,7 +1368,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
       const dockBlend = dockBlendLinear * dockBlendLinear * (3 - 2 * dockBlendLinear);
       const blendedTop =
         constrainedHeroTop + (dockTopLive - constrainedHeroTop) * dockBlend;
-      const y = blendedTop + HERO_DOCK_Y_OFFSET_PX;
+      const y = blendedTop + dockOffsetPx;
       const clampedToHeroBoundary = clampTopToPeriwinkleEdge(y, scaleY);
       // Release the hero-edge clamp as we approach nav to prevent a "hold" before docking.
       const boundaryReleaseLinear = clamp((scaleP - 0.56) / 0.34, 0, 1);
@@ -1353,7 +1376,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
         boundaryReleaseLinear * boundaryReleaseLinear * (3 - 2 * boundaryReleaseLinear);
       const heroBoundaryY =
         clampedToHeroBoundary + (y - clampedToHeroBoundary) * boundaryRelease;
-      const dockStopY = dockTopLive + HERO_DOCK_Y_OFFSET_PX;
+      const dockStopY = dockTopLive + dockOffsetPx;
       // Continuous transition around dock stop (no branch snap) for seamless motion.
       const d = dockStopY - heroBoundaryY;
       const band = HERO_DOCK_TRANSITION_BAND_PX;
@@ -2180,7 +2203,7 @@ const initPostHeroScrollReveal = () => {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const revealTargets = [];
   const IMAGE_TO_TEXT_DELAY_MS = 300;
-  const TRADITIONAL_TEXT_DELAY_MS = 230;
+  const TRADITIONAL_TEXT_DELAY_MS = 730;
 
   const addRevealItem = (node, delayMs, options = {}) => {
     if (!node || node.nodeType !== 1 || node.classList.contains("scroll-reveal")) return;
