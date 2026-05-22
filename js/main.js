@@ -204,6 +204,487 @@ const bindTraditionalRouteExitFade = () => {
 startTraditionalEntryFade();
 bindTraditionalRouteExitFade();
 
+const initTraditionalPinnedRowShift = () => {
+  if (!document.body.classList.contains("page-traditional")) return;
+
+  const topbarEl = document.getElementById("topbar");
+  const traditionalCollectionLabel = document.querySelector(
+    ".traditional-copy-block .hero-follow-image__sub"
+  );
+  const swatchRow = document.querySelector(".traditional-sequence__row--top");
+  const collectionSubtagItems = Array.from(
+    document.querySelectorAll(".traditional-copy-block__subtag-item")
+  );
+  if (!topbarEl || !traditionalCollectionLabel || !swatchRow) return;
+
+  const prefersReducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)"
+  ).matches;
+  if (prefersReducedMotion) return;
+
+  const PROGRESS_EASE = 0.035;
+  const LABEL_OFFSET_FROM_NAV_PX = 10;
+  const HOLD_BEFORE_SHIFT_MS = 40;
+  const LOGICAL_SECTION_COUNT = 3;
+  const LOOP_GROUPS = LOGICAL_SECTION_COUNT;
+  const WHEEL_STAGE_TRIGGER_PX = 180;
+  const TOUCH_STAGE_TRIGGER_PX = 140;
+  const STAGE_SETTLE_EPSILON_PX = 0.2;
+  const REVERSE_TRIGGER_BUFFER_PX = 2;
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  let currentShiftPx = 0;
+  let targetShiftPx = 0;
+  let maxShiftPx = 0;
+  let stageAnchorsPx = [0];
+  let baseCardCount = 0;
+  let progressRaf = 0;
+  let pinActive = false;
+  let pinLockY = 0;
+  let wasAboveTrigger = false;
+  let holdUntilMs = 0;
+  let lastScrollY = window.scrollY || window.pageYOffset || 0;
+  let lastTouchY = null;
+  let targetStage = 0;
+  let stageCarryPx = 0;
+  const hasTouchInput =
+    window.matchMedia("(pointer: coarse)").matches ||
+    "ontouchstart" in window ||
+    navigator.maxTouchPoints > 0;
+
+  const getDeltaYInPixels = (event) => {
+    if (event.deltaMode === 1) return event.deltaY * 16;
+    if (event.deltaMode === 2) return event.deltaY * window.innerHeight;
+    return event.deltaY;
+  };
+
+  const getLogicalStageIndex = (stageIndex) => {
+    const safeBase = Math.max(1, LOGICAL_SECTION_COUNT);
+    return ((stageIndex % safeBase) + safeBase) % safeBase;
+  };
+
+  const updateSubtagMutedState = (stageIndex) => {
+    if (!collectionSubtagItems.length) return;
+    const logicalStage = getLogicalStageIndex(stageIndex);
+    const mutedKeysByStage = [
+      new Set(["heritage", "legacy"]),
+      new Set(["horizon", "legacy"]),
+      new Set(["horizon", "heritage"])
+    ];
+    const mutedKeys = mutedKeysByStage[logicalStage] || mutedKeysByStage[0];
+    collectionSubtagItems.forEach((item) => {
+      const key = (item.dataset.collectionKey || "").trim();
+      item.classList.toggle("is-muted", mutedKeys.has(key));
+    });
+  };
+
+  const getNavBottomY = () => {
+    const rect = topbarEl.getBoundingClientRect();
+    return Number.isFinite(rect?.bottom) ? rect.bottom : topbarEl.offsetHeight || 68;
+  };
+
+  const getTraditionalCollectionTriggerGapPx = () => {
+    const labelRect = traditionalCollectionLabel.getBoundingClientRect();
+    return labelRect.top - (getNavBottomY() + LABEL_OFFSET_FROM_NAV_PX);
+  };
+  wasAboveTrigger = getTraditionalCollectionTriggerGapPx() > 0;
+
+  const recomputeMaxShift = (viewportWidthPx) => {
+    maxShiftPx = Math.max(0, swatchRow.scrollWidth - Math.max(1, viewportWidthPx));
+  };
+
+  const setupLoopingSquaresTrack = () => {
+    if (!swatchRow.dataset.loopReady) {
+      const originals = Array.from(
+        swatchRow.querySelectorAll(".traditional-sequence__card")
+      );
+      baseCardCount = originals.length;
+      swatchRow.dataset.loopBaseCount = String(baseCardCount);
+      originals.forEach((card) => {
+        card.classList.add("traditional-sequence__loop-original");
+        card.dataset.loopSet = "0";
+      });
+      for (let setIndex = 1; setIndex < LOOP_GROUPS; setIndex += 1) {
+        const divider = document.createElement("div");
+        divider.className =
+          "traditional-sequence__loop-divider traditional-sequence__loop-clone";
+        divider.setAttribute("aria-hidden", "true");
+        divider.dataset.loopSet = String(setIndex);
+
+        const clones = originals.map((card) => card.cloneNode(true));
+        clones.forEach((card) => {
+          card.classList.add("traditional-sequence__loop-clone");
+          card.dataset.loopSet = String(setIndex);
+        });
+
+        swatchRow.appendChild(divider);
+        clones.forEach((card) => swatchRow.appendChild(card));
+      }
+      swatchRow.dataset.loopReady = "true";
+    }
+
+    if (!baseCardCount) {
+      baseCardCount = parseInt(swatchRow.dataset.loopBaseCount || "0", 10) || 0;
+    }
+
+    const cards = Array.from(
+      swatchRow.querySelectorAll(".traditional-sequence__card")
+    );
+    if (!cards.length) return;
+    const dividers = Array.from(
+      swatchRow.querySelectorAll(".traditional-sequence__loop-divider")
+    );
+    const rowStyle = window.getComputedStyle(swatchRow);
+    const gapPx = parseFloat(rowStyle.columnGap || rowStyle.gap || "0") || 0;
+    const parent = swatchRow.parentElement;
+    let rightDividerBleedPx = 0;
+    let viewportWidth = swatchRow.clientWidth || window.innerWidth;
+    if (parent) {
+      const parentStyle = window.getComputedStyle(parent);
+      rightDividerBleedPx =
+        parseFloat(
+          parentStyle.getPropertyValue("--traditional-right-divider-bleed") ||
+            parentStyle.paddingRight ||
+            "0"
+        ) || 0;
+      viewportWidth = Math.max(1, parent.clientWidth);
+    }
+    const effectiveViewportWidth = Math.max(1, viewportWidth - rightDividerBleedPx);
+    const visibleCount = window.matchMedia("(max-width: 1220px)").matches ? 3 : 6;
+    const cardWidth = Math.max(
+      1,
+      (effectiveViewportWidth - gapPx * Math.max(0, visibleCount - 1)) / visibleCount
+    );
+
+    cards.forEach((card) => {
+      card.style.width = `${cardWidth}px`;
+      card.style.flex = `0 0 ${cardWidth}px`;
+    });
+
+    swatchRow.style.display = "flex";
+    swatchRow.style.flexWrap = "nowrap";
+    swatchRow.style.alignItems = "flex-start";
+    swatchRow.style.width = "max-content";
+
+    if (parent) {
+      parent.style.overflow = "hidden";
+    }
+    if (dividers.length) {
+      const dividerWidthPx = Math.max(14, Math.round(cardWidth * 0.06));
+      if (parent) {
+        // Keep right-side divider visible at the viewport edge.
+        const requiredBleedPx = Math.round(gapPx + dividerWidthPx + 10);
+        parent.style.setProperty(
+          "--traditional-right-divider-bleed",
+          `${requiredBleedPx}px`
+        );
+      }
+      dividers.forEach((divider) => {
+        divider.style.flex = `0 0 ${dividerWidthPx}px`;
+        divider.style.width = `${dividerWidthPx}px`;
+        divider.style.height = `${Math.round(cardWidth)}px`;
+      });
+    } else if (parent) {
+      parent.style.setProperty("--traditional-right-divider-bleed", "20px");
+    }
+
+    recomputeMaxShift(effectiveViewportWidth);
+
+    const visibleSetCount = Math.max(1, baseCardCount);
+    const setCardsByIndex = [];
+    for (let setIndex = 0; setIndex < LOOP_GROUPS; setIndex += 1) {
+      const setCards = cards
+        .filter((card) => Number(card.dataset.loopSet || "0") === setIndex)
+        .slice(0, visibleSetCount);
+      if (!setCards.length) continue;
+      setCardsByIndex.push(setCards);
+    }
+    const nextAnchors = [];
+    if (setCardsByIndex.length) {
+      const firstSetCards = setCardsByIndex[0];
+      const firstSetStart = firstSetCards[0].offsetLeft;
+      const firstSetEnd =
+        firstSetCards[firstSetCards.length - 1].offsetLeft +
+        firstSetCards[firstSetCards.length - 1].offsetWidth;
+      const firstSetAnchor = clamp(
+        (firstSetStart + firstSetEnd) / 2 - effectiveViewportWidth / 2,
+        0,
+        maxShiftPx
+      );
+
+      let setStepPx = 0;
+      if (setCardsByIndex.length > 1) {
+        setStepPx = Math.max(
+          1,
+          setCardsByIndex[1][0].offsetLeft - setCardsByIndex[0][0].offsetLeft
+        );
+      } else {
+        setStepPx = Math.max(
+          1,
+          firstSetEnd - firstSetStart + gapPx * 2 + (dividers[0]?.offsetWidth || 0)
+        );
+      }
+
+      for (let i = 0; i < LOOP_GROUPS; i += 1) {
+        const anchor = clamp(firstSetAnchor + setStepPx * i, 0, maxShiftPx);
+        if (!nextAnchors.length || Math.abs(anchor - nextAnchors[nextAnchors.length - 1]) > 0.5) {
+          nextAnchors.push(anchor);
+        }
+      }
+    }
+    stageAnchorsPx = nextAnchors.length ? nextAnchors : [0];
+    const stageMax = Math.max(0, stageAnchorsPx.length - 1);
+    targetStage = clamp(targetStage, 0, stageMax);
+    currentShiftPx = clamp(currentShiftPx, 0, maxShiftPx);
+    targetShiftPx = clamp(targetShiftPx, 0, maxShiftPx);
+  };
+
+  setupLoopingSquaresTrack();
+  updateSubtagMutedState(targetStage);
+
+  const applyRowShift = () => {
+    const shiftPx = Math.round(currentShiftPx * 1000) / 1000;
+    swatchRow.style.transform = `translate3d(${-shiftPx}px, 0, 0)`;
+    if (Math.abs(shiftPx) > 0.4 || Math.abs(targetShiftPx - currentShiftPx) > 0.4) {
+      swatchRow.classList.add("traditional-sequence__row--animating");
+    } else {
+      swatchRow.classList.remove("traditional-sequence__row--animating");
+    }
+  };
+
+  const tickProgress = () => {
+    const diff = targetShiftPx - currentShiftPx;
+    currentShiftPx += diff * PROGRESS_EASE;
+    if (Math.abs(diff) <= 0.12) {
+      currentShiftPx = targetShiftPx;
+      applyRowShift();
+      progressRaf = 0;
+      return;
+    }
+    applyRowShift();
+    progressRaf = window.requestAnimationFrame(tickProgress);
+  };
+
+  const ensureProgressTick = () => {
+    if (!progressRaf) progressRaf = window.requestAnimationFrame(tickProgress);
+  };
+
+  const getStageCount = () => Math.max(0, stageAnchorsPx.length - 1);
+
+  const getStageAnchor = (stageIndex) => {
+    const safeIndex = clamp(stageIndex, 0, stageAnchorsPx.length - 1);
+    return stageAnchorsPx[safeIndex] ?? 0;
+  };
+
+  const shiftByGroups = (deltaPx, triggerPx) => {
+    const stageCount = getStageCount();
+    const isSettling = Math.abs(targetShiftPx - currentShiftPx) > STAGE_SETTLE_EPSILON_PX;
+    if (isSettling) return;
+
+    stageCarryPx = clamp(stageCarryPx + deltaPx, -triggerPx * 2.2, triggerPx * 2.2);
+
+    if (stageCarryPx >= triggerPx && targetStage < stageCount) {
+      targetStage += 1;
+      stageCarryPx = 0;
+    } else if (stageCarryPx <= -triggerPx && targetStage > 0) {
+      targetStage -= 1;
+      stageCarryPx = 0;
+    } else {
+      return;
+    }
+
+    updateSubtagMutedState(targetStage);
+    targetShiftPx = clamp(getStageAnchor(targetStage), 0, maxShiftPx);
+    ensureProgressTick();
+  };
+
+  const activatePinAtTriggerLine = () => {
+    const gapPx = getTraditionalCollectionTriggerGapPx();
+    const currentY = window.scrollY || window.pageYOffset || 0;
+    pinLockY = currentY + gapPx;
+    window.scrollTo({ top: pinLockY, behavior: "auto" });
+    pinActive = true;
+    wasAboveTrigger = false;
+    holdUntilMs = performance.now() + HOLD_BEFORE_SHIFT_MS;
+  };
+
+  window.addEventListener(
+    "wheel",
+    (event) => {
+      const deltaY = getDeltaYInPixels(event);
+      if (Math.abs(deltaY) < 0.01) return;
+      const isEffectActive = currentShiftPx > 0.4 || targetShiftPx > 0.4 || targetStage > 0;
+      const stageCount = getStageCount();
+      const atLastStage =
+        targetStage >= stageCount &&
+        Math.abs(targetShiftPx - currentShiftPx) <= STAGE_SETTLE_EPSILON_PX;
+
+      if (deltaY > 0) {
+        if (!pinActive) return;
+        if (atLastStage) {
+          pinActive = false;
+          return;
+        }
+
+        event.preventDefault();
+        if (performance.now() < holdUntilMs) {
+          return;
+        }
+        shiftByGroups(deltaY, WHEEL_STAGE_TRIGGER_PX);
+        return;
+      }
+
+      // Reverse squares first, then allow upward page scroll once reset.
+      if (deltaY < 0 && (isEffectActive || pinActive)) {
+        const gapPx = getTraditionalCollectionTriggerGapPx();
+        const readyToReverse = pinActive || gapPx >= -REVERSE_TRIGGER_BUFFER_PX;
+        if (!readyToReverse) {
+          // Still below the trigger zone: keep current section and allow native up scroll.
+          return;
+        }
+        if (!pinActive) {
+          activatePinAtTriggerLine();
+          holdUntilMs = 0;
+        }
+        if (targetStage <= 0 && targetShiftPx <= 0.4 && currentShiftPx <= 0.4) {
+          pinActive = false;
+          return;
+        }
+        event.preventDefault();
+        pinActive = true;
+        shiftByGroups(deltaY, WHEEL_STAGE_TRIGGER_PX);
+        if (targetShiftPx <= 0.4 && currentShiftPx <= 0.4 && targetStage <= 0) {
+          pinActive = false;
+        }
+        return;
+      }
+
+      // Once squares are reset, native upward page scroll continues.
+    },
+    { passive: false }
+  );
+
+  if (hasTouchInput) {
+    window.addEventListener(
+      "touchstart",
+      (event) => {
+        const touch = event.touches && event.touches[0];
+        lastTouchY = touch ? touch.clientY : null;
+      },
+      { passive: true }
+    );
+
+    window.addEventListener(
+      "touchmove",
+      (event) => {
+        const touch = event.touches && event.touches[0];
+        if (!touch) return;
+
+        if (lastTouchY === null) {
+          lastTouchY = touch.clientY;
+          return;
+        }
+
+        // Finger moving up means user is scrolling down.
+        const deltaY = lastTouchY - touch.clientY;
+        lastTouchY = touch.clientY;
+        if (Math.abs(deltaY) < 0.01) return;
+
+        const isEffectActive = currentShiftPx > 0.4 || targetShiftPx > 0.4 || targetStage > 0;
+        const stageCount = getStageCount();
+        const atLastStage =
+          targetStage >= stageCount &&
+          Math.abs(targetShiftPx - currentShiftPx) <= STAGE_SETTLE_EPSILON_PX;
+
+        if (deltaY > 0) {
+          if (!pinActive) return;
+          if (atLastStage) {
+            pinActive = false;
+            return;
+          }
+
+          event.preventDefault();
+          if (performance.now() < holdUntilMs) return;
+          shiftByGroups(deltaY, TOUCH_STAGE_TRIGGER_PX);
+          return;
+        }
+
+        // Reverse squares first, then allow upward page scroll once reset.
+        if (deltaY < 0 && (isEffectActive || pinActive)) {
+          const gapPx = getTraditionalCollectionTriggerGapPx();
+          const readyToReverse = pinActive || gapPx >= -REVERSE_TRIGGER_BUFFER_PX;
+          if (!readyToReverse) {
+            return;
+          }
+          if (!pinActive) {
+            activatePinAtTriggerLine();
+            holdUntilMs = 0;
+          }
+          if (targetStage <= 0 && targetShiftPx <= 0.4 && currentShiftPx <= 0.4) {
+            pinActive = false;
+            return;
+          }
+          event.preventDefault();
+          pinActive = true;
+          shiftByGroups(deltaY, TOUCH_STAGE_TRIGGER_PX);
+          if (targetShiftPx <= 0.4 && currentShiftPx <= 0.4 && targetStage <= 0) {
+            pinActive = false;
+          }
+          return;
+        }
+      },
+      { passive: false }
+    );
+  }
+
+  window.addEventListener(
+    "scroll",
+    () => {
+      const currentY = window.scrollY || window.pageYOffset || 0;
+      const scrollingDown = currentY > lastScrollY + 0.2;
+
+      const gapPx = getTraditionalCollectionTriggerGapPx();
+      if (gapPx > 0) {
+        wasAboveTrigger = true;
+      }
+
+      if (pinActive) {
+        // Keep a stable lock target to avoid micro-jitter from repeated
+        // gap recalculation against a changing nav rect.
+        if (Math.abs(currentY - pinLockY) > 0.5) {
+          window.scrollTo({ top: pinLockY, behavior: "auto" });
+        }
+        lastScrollY = currentY;
+        return;
+      }
+
+      if (scrollingDown && wasAboveTrigger && gapPx <= 0) {
+        activatePinAtTriggerLine();
+      }
+
+      lastScrollY = currentY;
+    },
+    { passive: true }
+  );
+
+  window.addEventListener(
+    "resize",
+    () => {
+      setupLoopingSquaresTrack();
+      const stageMax = Math.max(0, stageAnchorsPx.length - 1);
+      targetStage = clamp(targetStage, 0, stageMax);
+      updateSubtagMutedState(targetStage);
+      stageCarryPx = 0;
+      targetShiftPx = getStageAnchor(targetStage);
+      currentShiftPx = clamp(currentShiftPx, 0, maxShiftPx);
+      applyRowShift();
+    },
+    { passive: true }
+  );
+};
+
+initTraditionalPinnedRowShift();
+
 const hamburger = document.getElementById("hamburger");
 const nav = document.getElementById("navOverlay");
 const navClose = document.getElementById("navClose");
