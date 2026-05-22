@@ -144,6 +144,66 @@ const sessionRemove = (key) => {
   }
 };
 
+const TRADITIONAL_ROUTE_FADE_KEY = "valerieweb.routeFadeTraditional";
+const TRADITIONAL_SKIP_BLACK_INTRO_KEY = "valerieweb.skipTraditionalBlackIntro";
+const ROUTE_FADE_MS = 1000;
+
+const isPrimaryUnmodifiedClick = (event) =>
+  event.button === 0 &&
+  !event.metaKey &&
+  !event.ctrlKey &&
+  !event.shiftKey &&
+  !event.altKey;
+
+const startTraditionalEntryFade = () => {
+  if (document.body.classList.contains("page-traditional")) {
+    if (sessionGet(TRADITIONAL_SKIP_BLACK_INTRO_KEY) === "1") {
+      document.body.classList.add("traditional-skip-black-intro");
+    }
+    sessionRemove(TRADITIONAL_SKIP_BLACK_INTRO_KEY);
+  }
+  if (!document.body.classList.contains("page-traditional")) return;
+  if (sessionGet(TRADITIONAL_ROUTE_FADE_KEY) !== "1") return;
+  sessionRemove(TRADITIONAL_ROUTE_FADE_KEY);
+  document.body.classList.add("route-fade-enter");
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      document.body.classList.add("route-fade-enter-active");
+    });
+  });
+  window.setTimeout(() => {
+    document.body.classList.remove("route-fade-enter", "route-fade-enter-active");
+  }, ROUTE_FADE_MS + 120);
+};
+
+const bindTraditionalRouteExitFade = () => {
+  if (document.body.classList.contains("page-traditional")) return;
+  const traditionalCta = document.querySelector(
+    '.hero-square-carousel__kees-cta[href="traditional.html"]'
+  );
+  if (!traditionalCta) return;
+  let isLeaving = false;
+  traditionalCta.addEventListener("click", (event) => {
+    if (event.defaultPrevented || isLeaving) return;
+    if (!isPrimaryUnmodifiedClick(event)) return;
+    const href = traditionalCta.getAttribute("href");
+    if (!href) return;
+    const url = new URL(href, window.location.href);
+    if (!/\/traditional\.html$/i.test(url.pathname)) return;
+    event.preventDefault();
+    isLeaving = true;
+    sessionSet(TRADITIONAL_ROUTE_FADE_KEY, "1");
+    sessionSet(TRADITIONAL_SKIP_BLACK_INTRO_KEY, "1");
+    document.body.classList.add("route-fade-leave");
+    window.setTimeout(() => {
+      window.location.href = url.href;
+    }, ROUTE_FADE_MS);
+  });
+};
+
+startTraditionalEntryFade();
+bindTraditionalRouteExitFade();
+
 const hamburger = document.getElementById("hamburger");
 const nav = document.getElementById("navOverlay");
 const navClose = document.getElementById("navClose");
@@ -825,6 +885,9 @@ const ENABLE_HERO_TITLE_SCROLL_ANIMATION = true;
 const IS_TRADITIONAL_PAGE = document.body.classList.contains("page-traditional");
 const TRADITIONAL_NAV_START_Y = 1;
 const TRADITIONAL_NAV_RAMP_PX = 30;
+const TRADITIONAL_TITLE_SHRINK_RAMP_PX = 140;
+const TRADITIONAL_TOP_TITLE_DROP_PX = 25;
+const TRADITIONAL_VERTICAL_STRETCH_MULTIPLIER = 1.2;
 const HERO_TEXT_DARK_PROGRESS = 0.9;
 const HERO_NAV_EXTRA_SCROLL_PX = 20;
 
@@ -1338,16 +1401,25 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
           0,
           1
         );
+        const titleShrinkLinear = clamp(
+          (currentScrollY - TRADITIONAL_NAV_START_Y) / TRADITIONAL_TITLE_SHRINK_RAMP_PX,
+          0,
+          1
+        );
+        const titleShrinkProgress =
+          titleShrinkLinear * titleShrinkLinear * (3 - 2 * titleShrinkLinear);
         const dockOffsetPx = getHeroDockOffsetPx();
-        // Keep top state only slightly larger than docked size on Traditional.
-        const topFontPt = HERO_DOCK_TARGET_FONT_PT + 1;
+        // Traditional top state: +10pt at top, then shrink toward docked size while scrolling.
+        const topFontPt = HERO_DOCK_TARGET_FONT_PT + 10;
         const topScale = clamp((topFontPt * CSS_PT_TO_PX) / lockedSourceFontPx, 0.08, 0.46);
-        const fixedScale = topScale + (endScale - topScale) * navLiftProgress;
+        const fixedScale = topScale + (endScale - topScale) * titleShrinkProgress;
         const fixedScaleX = fixedScale * horizontalSquish;
-        const fixedScaleY = fixedScale * verticalStretch;
+        // Keep stretch proportions constant through the entire shrink.
+        const fixedScaleY = fixedScale * verticalStretch * TRADITIONAL_VERTICAL_STRETCH_MULTIPLIER;
         const navDockCenterY = navRect.top + navRect.height * 0.5;
         const dockTopLive = navDockCenterY - (baseTitleHeight * fixedScaleY) * 0.5;
-        const dockY = dockTopLive + dockOffsetPx;
+        const topDropPx = (1 - titleShrinkProgress) * TRADITIONAL_TOP_TITLE_DROP_PX;
+        const dockY = dockTopLive + dockOffsetPx + topDropPx;
         const navFadeProgress = navLiftProgress;
         // Stronger visible expand/collapse on Traditional.
         const navSheetExtraPx = (1 - navLiftProgress) * 40;
@@ -1364,9 +1436,23 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
         springTargetY = dockY;
         springTargetScaleX = fixedScaleX;
         springTargetScaleY = fixedScaleY;
-        springY = dockY;
-        springScaleX = fixedScaleX;
-        springScaleY = fixedScaleY;
+        if (inRefreshFreeze || !Number.isFinite(springScaleX) || !Number.isFinite(springScaleY)) {
+          springY = dockY;
+          springScaleX = fixedScaleX;
+          springScaleY = fixedScaleY;
+        } else {
+          // Subtle delayed ease in both directions:
+          // slightly quicker when shrinking, slightly softer when expanding back up.
+          const TRADITIONAL_SMOOTH_SHRINK = 0.17;
+          const TRADITIONAL_SMOOTH_EXPAND = 0.13;
+          const isExpanding = fixedScaleY > springScaleY;
+          const traditionalSmooth = isExpanding
+            ? TRADITIONAL_SMOOTH_EXPAND
+            : TRADITIONAL_SMOOTH_SHRINK;
+          springY += (dockY - springY) * traditionalSmooth;
+          springScaleX += (fixedScaleX - springScaleX) * traditionalSmooth;
+          springScaleY += (fixedScaleY - springScaleY) * traditionalSmooth;
+        }
 
         whiteNavActiveForColor = navIsSolid;
         topbar.classList.toggle("nav-sheet-visible", navIsSolid);
@@ -1391,7 +1477,7 @@ if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) 
           `${navSheetExtraPx.toFixed(2)}px`
         );
 
-        applyFloatingTransform(dockY, fixedScaleX, fixedScaleY);
+        applyFloatingTransform(springY, springScaleX, springScaleY);
         floatingTitle.style.visibility = "visible";
         floatingTitle.style.opacity = "1";
         floatingTitle.classList.add("is-layout-ready");
@@ -2367,6 +2453,26 @@ const initPostHeroScrollReveal = () => {
       }
 
       revealNodes.forEach((el, i) => addRevealItem(el, i * 80));
+      continue;
+    }
+
+    if (block.classList.contains("traditional-copy-block")) {
+      const traditionalTextBlock = block.querySelector(".hero-square-carousel__kees");
+      if (traditionalTextBlock) {
+        addRevealItem(traditionalTextBlock, 0, { noLift: true });
+      } else {
+        addRevealItem(block, 0, { noLift: true });
+      }
+      continue;
+    }
+
+    if (block.classList.contains("traditional-sequence")) {
+      const swatchCards = block.querySelectorAll(".traditional-sequence__card");
+      if (swatchCards.length) {
+        swatchCards.forEach((card, idx) => addRevealItem(card, idx * 70));
+      } else {
+        addRevealItem(block, 0);
+      }
       continue;
     }
 
