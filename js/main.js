@@ -206,484 +206,358 @@ bindTraditionalRouteExitFade();
 
 const initTraditionalPinnedRowShift = () => {
   if (!document.body.classList.contains("page-traditional")) return;
-
-  const topbarEl = document.getElementById("topbar");
-  const traditionalCollectionLabel = document.querySelector(
-    ".traditional-copy-block .hero-follow-image__sub"
-  );
-  const swatchRow = document.querySelector(".traditional-sequence__row--top");
-  const collectionSubtagItems = Array.from(
+  // No docking/pin. Scroll above/through the squares section drives horizontal shift.
+  const sequenceSection = document.querySelector(".traditional-sequence");
+  const scrollViewport = document.querySelector(".traditional-sequence__viewport");
+  const scrollRow = document.querySelector(".traditional-sequence__row--top");
+  const sequencePrev = document.querySelector(".traditional-sequence__arrow--left");
+  const sequenceNext = document.querySelector(".traditional-sequence__arrow--right");
+  const subtagItems = Array.from(
     document.querySelectorAll(".traditional-copy-block__subtag-item")
   );
-  if (!topbarEl || !traditionalCollectionLabel || !swatchRow) return;
+  if (!sequenceSection || !scrollViewport || !scrollRow) return;
 
-  const prefersReducedMotion = window.matchMedia(
+  const prefersReducedMotionSimple = window.matchMedia(
     "(prefers-reduced-motion: reduce)"
   ).matches;
-  if (prefersReducedMotion) return;
+  if (prefersReducedMotionSimple) return;
 
-  const PROGRESS_EASE = 0.035;
-  const LABEL_OFFSET_FROM_NAV_PX = 10;
-  const HOLD_BEFORE_SHIFT_MS = 40;
-  const LOGICAL_SECTION_COUNT = 3;
-  const LOOP_GROUPS = LOGICAL_SECTION_COUNT;
-  const WHEEL_STAGE_TRIGGER_PX = 180;
-  const TOUCH_STAGE_TRIGGER_PX = 140;
-  const STAGE_SETTLE_EPSILON_PX = 0.2;
-  const REVERSE_TRIGGER_BUFFER_PX = 2;
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-
+  const LOGICAL_SECTION_COUNT = 3;
+  const LOOP_SET_COUNT = LOGICAL_SECTION_COUNT + 1;
+  const SQUARES_PER_SECTION = 6;
+  const SECTION_BREAK_EXTRA_GAP_PX = 60;
+  const AUTO_SHIFT_MS = 4000;
+  let maxShiftPx = 0;
   let currentShiftPx = 0;
   let targetShiftPx = 0;
-  let maxShiftPx = 0;
-  let stageAnchorsPx = [0];
-  let baseCardCount = 0;
-  let progressRaf = 0;
-  let pinActive = false;
-  let pinLockY = 0;
-  let wasAboveTrigger = false;
-  let holdUntilMs = 0;
-  let lastScrollY = window.scrollY || window.pageYOffset || 0;
-  let lastTouchY = null;
-  let targetStage = 0;
-  let stageCarryPx = 0;
-  const hasTouchInput =
-    window.matchMedia("(pointer: coarse)").matches ||
-    "ontouchstart" in window ||
-    navigator.maxTouchPoints > 0;
+  let sectionStepPx = 0;
+  let physicalAnchorsPx = [0, 0, 0, 0];
+  let currentPhysicalIndex = 0;
+  let pendingWrapToFirst = false;
+  let activeCards = [];
+  let rafId = 0;
+  let revealRafId = 0;
+  let autoShiftTimer = 0;
+  let animationFromShiftPx = 0;
+  let animationStartTimeMs = 0;
+  const SECTION_SHIFT_DURATION_MS = 1700;
+  const SHIFT_SETTLE_EPSILON = 0.08;
+  const SECTION_KEYS_IN_ORDER = ["horizon", "heritage", "legacy"];
+  const CARD_REVEAL_STAGGER_MS = 64;
+  const easeInOutCubic = (t) =>
+    t < 0.5 ? 4 * t * t * t : 1 - ((-2 * t + 2) ** 3) / 2;
 
-  const getDeltaYInPixels = (event) => {
-    if (event.deltaMode === 1) return event.deltaY * 16;
-    if (event.deltaMode === 2) return event.deltaY * window.innerHeight;
-    return event.deltaY;
-  };
+  const revealVisibleCards = () => {
+    if (!activeCards.length) return;
+    const viewportRect = scrollViewport.getBoundingClientRect();
+    const enteringCards = [];
 
-  const getLogicalStageIndex = (stageIndex) => {
-    const safeBase = Math.max(1, LOGICAL_SECTION_COUNT);
-    return ((stageIndex % safeBase) + safeBase) % safeBase;
-  };
+    activeCards.forEach((card) => {
+      if (card.dataset.dominoRevealed === "true") return;
+      const rect = card.getBoundingClientRect();
+      const inViewHorizontally =
+        rect.right > viewportRect.left + 6 &&
+        rect.left < viewportRect.right - 6;
+      const inViewVertically =
+        rect.bottom > viewportRect.top &&
+        rect.top < viewportRect.bottom;
+      if (!inViewHorizontally || !inViewVertically) return;
+      enteringCards.push({ card, left: rect.left });
+    });
 
-  const updateSubtagMutedState = (stageIndex) => {
-    if (!collectionSubtagItems.length) return;
-    const logicalStage = getLogicalStageIndex(stageIndex);
-    const mutedKeysByStage = [
-      new Set(["heritage", "legacy"]),
-      new Set(["horizon", "legacy"]),
-      new Set(["horizon", "heritage"])
-    ];
-    const mutedKeys = mutedKeysByStage[logicalStage] || mutedKeysByStage[0];
-    collectionSubtagItems.forEach((item) => {
-      const key = (item.dataset.collectionKey || "").trim();
-      item.classList.toggle("is-muted", mutedKeys.has(key));
+    enteringCards.sort((a, b) => a.left - b.left);
+    enteringCards.forEach(({ card }, index) => {
+      card.style.setProperty(
+        "--traditional-domino-delay",
+        `${index * CARD_REVEAL_STAGGER_MS}ms`
+      );
+      card.classList.add("is-visible");
+      card.dataset.dominoRevealed = "true";
     });
   };
 
-  const getNavBottomY = () => {
-    const rect = topbarEl.getBoundingClientRect();
-    return Number.isFinite(rect?.bottom) ? rect.bottom : topbarEl.offsetHeight || 68;
+  const requestReveal = () => {
+    if (revealRafId) return;
+    revealRafId = window.requestAnimationFrame(() => {
+      revealRafId = 0;
+      revealVisibleCards();
+    });
   };
 
-  const getTraditionalCollectionTriggerGapPx = () => {
-    const labelRect = traditionalCollectionLabel.getBoundingClientRect();
-    return labelRect.top - (getNavBottomY() + LABEL_OFFSET_FROM_NAV_PX);
-  };
-  wasAboveTrigger = getTraditionalCollectionTriggerGapPx() > 0;
-
-  const recomputeMaxShift = (viewportWidthPx) => {
-    maxShiftPx = Math.max(0, swatchRow.scrollWidth - Math.max(1, viewportWidthPx));
-  };
-
-  const setupLoopingSquaresTrack = () => {
-    if (!swatchRow.dataset.loopReady) {
-      const originals = Array.from(
-        swatchRow.querySelectorAll(".traditional-sequence__card")
-      );
-      baseCardCount = originals.length;
-      swatchRow.dataset.loopBaseCount = String(baseCardCount);
-      originals.forEach((card) => {
-        card.classList.add("traditional-sequence__loop-original");
-        card.dataset.loopSet = "0";
-      });
-      for (let setIndex = 1; setIndex < LOOP_GROUPS; setIndex += 1) {
-        const divider = document.createElement("div");
-        divider.className =
-          "traditional-sequence__loop-divider traditional-sequence__loop-clone";
-        divider.setAttribute("aria-hidden", "true");
-        divider.dataset.loopSet = String(setIndex);
-
-        const clones = originals.map((card) => card.cloneNode(true));
-        clones.forEach((card) => {
-          card.classList.add("traditional-sequence__loop-clone");
-          card.dataset.loopSet = String(setIndex);
-        });
-
-        swatchRow.appendChild(divider);
-        clones.forEach((card) => swatchRow.appendChild(card));
+  const getNearestPhysicalIndex = (shiftPx) => {
+    if (!physicalAnchorsPx.length) return 0;
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    physicalAnchorsPx.forEach((anchorPx, index) => {
+      const dist = Math.abs(shiftPx - anchorPx);
+      if (dist < nearestDistance) {
+        nearestDistance = dist;
+        nearestIndex = index;
       }
-      swatchRow.dataset.loopReady = "true";
-    }
+    });
+    return nearestIndex;
+  };
 
-    if (!baseCardCount) {
-      baseCardCount = parseInt(swatchRow.dataset.loopBaseCount || "0", 10) || 0;
-    }
+  const updateCollectionSubtagState = () => {
+    if (!subtagItems.length) return;
+    const physicalIndex = getNearestPhysicalIndex(currentShiftPx);
+    const logicalIndex =
+      ((physicalIndex % LOGICAL_SECTION_COUNT) + LOGICAL_SECTION_COUNT) %
+      LOGICAL_SECTION_COUNT;
+    const activeKey = SECTION_KEYS_IN_ORDER[logicalIndex] || SECTION_KEYS_IN_ORDER[0];
+    subtagItems.forEach((item) => {
+      const key = (item.dataset.collectionKey || "").trim();
+      const isActive = key === activeKey;
+      item.classList.toggle("is-active", isActive);
+      item.classList.toggle("is-muted", !isActive);
+    });
+  };
 
-    const cards = Array.from(
-      swatchRow.querySelectorAll(".traditional-sequence__card")
+  const ensureLoopContent = () => {
+    if (scrollRow.dataset.simpleLoopReady === "true") return;
+    const originals = Array.from(
+      scrollRow.querySelectorAll(".traditional-sequence__card")
     );
+    if (!originals.length) return;
+    originals.slice(0, SQUARES_PER_SECTION).forEach((card) => {
+      card.dataset.loopSet = "0";
+    });
+    for (let setIndex = 1; setIndex < LOOP_SET_COUNT; setIndex += 1) {
+      originals.slice(0, SQUARES_PER_SECTION).forEach((card) => {
+        const clone = card.cloneNode(true);
+        clone.dataset.loopSet = String(setIndex);
+        scrollRow.appendChild(clone);
+      });
+    }
+    scrollRow.dataset.simpleLoopReady = "true";
+  };
+
+  const setupTrack = () => {
+    ensureLoopContent();
+    const allCards = Array.from(
+      scrollRow.querySelectorAll(".traditional-sequence__card")
+    );
+    const cards = allCards.slice(0, SQUARES_PER_SECTION * LOOP_SET_COUNT);
+    if (allCards.length > cards.length) {
+      allCards.slice(cards.length).forEach((card) => card.remove());
+    }
     if (!cards.length) return;
-    const dividers = Array.from(
-      swatchRow.querySelectorAll(".traditional-sequence__loop-divider")
-    );
-    const rowStyle = window.getComputedStyle(swatchRow);
+    activeCards = cards;
+
+    const rowStyle = window.getComputedStyle(scrollRow);
     const gapPx = parseFloat(rowStyle.columnGap || rowStyle.gap || "0") || 0;
-    const parent = swatchRow.parentElement;
-    let rightDividerBleedPx = 0;
-    let viewportWidth = swatchRow.clientWidth || window.innerWidth;
-    if (parent) {
-      const parentStyle = window.getComputedStyle(parent);
-      rightDividerBleedPx =
-        parseFloat(
-          parentStyle.getPropertyValue("--traditional-right-divider-bleed") ||
-            parentStyle.paddingRight ||
-            "0"
-        ) || 0;
-      viewportWidth = Math.max(1, parent.clientWidth);
-    }
-    const effectiveViewportWidth = Math.max(1, viewportWidth - rightDividerBleedPx);
+    const viewportWidth = Math.max(1, scrollViewport.clientWidth || window.innerWidth);
     const visibleCount = window.matchMedia("(max-width: 1220px)").matches ? 3 : 6;
     const cardWidth = Math.max(
       1,
-      (effectiveViewportWidth - gapPx * Math.max(0, visibleCount - 1)) / visibleCount
+      (viewportWidth - gapPx * Math.max(0, visibleCount - 1)) / visibleCount
     );
 
-    cards.forEach((card) => {
+    cards.forEach((card, index) => {
       card.style.width = `${cardWidth}px`;
       card.style.flex = `0 0 ${cardWidth}px`;
+      card.style.setProperty("--square-size", `${cardWidth}px`);
+      card.classList.add("traditional-card-reveal");
+      if (card.dataset.dominoRevealed === "true") {
+        card.classList.add("is-visible");
+      } else {
+        card.classList.remove("is-visible");
+      }
+      const isSectionStart = index > 0 && index % SQUARES_PER_SECTION === 0;
+      card.classList.toggle("traditional-sequence__card--section-start", isSectionStart);
+      card.style.marginLeft = isSectionStart
+        ? `${SECTION_BREAK_EXTRA_GAP_PX}px`
+        : "0px";
     });
 
-    swatchRow.style.display = "flex";
-    swatchRow.style.flexWrap = "nowrap";
-    swatchRow.style.alignItems = "flex-start";
-    swatchRow.style.width = "max-content";
+    scrollRow.style.display = "flex";
+    scrollRow.style.flexWrap = "nowrap";
+    scrollRow.style.alignItems = "flex-start";
+    scrollRow.style.width = "max-content";
+    scrollViewport.style.overflow = "hidden";
 
-    if (parent) {
-      parent.style.overflow = "hidden";
-    }
-    if (dividers.length) {
-      const dividerWidthPx = Math.max(14, Math.round(cardWidth * 0.06));
-      if (parent) {
-        // Keep right-side divider visible at the viewport edge.
-        const requiredBleedPx = Math.round(gapPx + dividerWidthPx + 10);
-        parent.style.setProperty(
-          "--traditional-right-divider-bleed",
-          `${requiredBleedPx}px`
-        );
-      }
-      dividers.forEach((divider) => {
-        divider.style.flex = `0 0 ${dividerWidthPx}px`;
-        divider.style.width = `${dividerWidthPx}px`;
-        divider.style.height = `${Math.round(cardWidth)}px`;
-      });
-    } else if (parent) {
-      parent.style.setProperty("--traditional-right-divider-bleed", "20px");
-    }
+    maxShiftPx = Math.max(0, scrollRow.scrollWidth - viewportWidth);
 
-    recomputeMaxShift(effectiveViewportWidth);
+    physicalAnchorsPx = Array.from({ length: LOOP_SET_COUNT }, (_, sectionIndex) => {
+      const startIndex = sectionIndex * SQUARES_PER_SECTION;
+      const endIndex = startIndex + SQUARES_PER_SECTION - 1;
+      const firstCard = cards[startIndex];
+      const lastCard = cards[endIndex];
+      if (!firstCard || !lastCard) return 0;
+      const groupLeft = firstCard.offsetLeft;
+      const groupRight = lastCard.offsetLeft + lastCard.offsetWidth;
+      return clamp(((groupLeft + groupRight) * 0.5) - (viewportWidth * 0.5), 0, maxShiftPx);
+    });
+    sectionStepPx = Math.max(
+      1,
+      physicalAnchorsPx.length > 1
+        ? Math.abs(physicalAnchorsPx[1] - physicalAnchorsPx[0])
+        : viewportWidth * 0.82
+    );
 
-    const visibleSetCount = Math.max(1, baseCardCount);
-    const setCardsByIndex = [];
-    for (let setIndex = 0; setIndex < LOOP_GROUPS; setIndex += 1) {
-      const setCards = cards
-        .filter((card) => Number(card.dataset.loopSet || "0") === setIndex)
-        .slice(0, visibleSetCount);
-      if (!setCards.length) continue;
-      setCardsByIndex.push(setCards);
-    }
-    const nextAnchors = [];
-    if (setCardsByIndex.length) {
-      const firstSetCards = setCardsByIndex[0];
-      const firstSetStart = firstSetCards[0].offsetLeft;
-      const firstSetEnd =
-        firstSetCards[firstSetCards.length - 1].offsetLeft +
-        firstSetCards[firstSetCards.length - 1].offsetWidth;
-      const firstSetAnchor = clamp(
-        (firstSetStart + firstSetEnd) / 2 - effectiveViewportWidth / 2,
-        0,
-        maxShiftPx
-      );
-
-      let setStepPx = 0;
-      if (setCardsByIndex.length > 1) {
-        setStepPx = Math.max(
-          1,
-          setCardsByIndex[1][0].offsetLeft - setCardsByIndex[0][0].offsetLeft
-        );
-      } else {
-        setStepPx = Math.max(
-          1,
-          firstSetEnd - firstSetStart + gapPx * 2 + (dividers[0]?.offsetWidth || 0)
-        );
-      }
-
-      for (let i = 0; i < LOOP_GROUPS; i += 1) {
-        const anchor = clamp(firstSetAnchor + setStepPx * i, 0, maxShiftPx);
-        if (!nextAnchors.length || Math.abs(anchor - nextAnchors[nextAnchors.length - 1]) > 0.5) {
-          nextAnchors.push(anchor);
-        }
-      }
-    }
-    stageAnchorsPx = nextAnchors.length ? nextAnchors : [0];
-    const stageMax = Math.max(0, stageAnchorsPx.length - 1);
-    targetStage = clamp(targetStage, 0, stageMax);
-    currentShiftPx = clamp(currentShiftPx, 0, maxShiftPx);
-    targetShiftPx = clamp(targetShiftPx, 0, maxShiftPx);
+    currentPhysicalIndex = clamp(currentPhysicalIndex, 0, physicalAnchorsPx.length - 1);
+    const baseAnchor = physicalAnchorsPx[currentPhysicalIndex] ?? 0;
+    currentShiftPx = clamp(baseAnchor, 0, maxShiftPx);
+    targetShiftPx = clamp(baseAnchor, 0, maxShiftPx);
+    animationFromShiftPx = currentShiftPx;
+    animationStartTimeMs = performance.now();
+    scrollRow.style.transform = `translate3d(${-currentShiftPx}px, 0, 0)`;
+    updateCollectionSubtagState();
+    requestReveal();
   };
 
-  setupLoopingSquaresTrack();
-  updateSubtagMutedState(targetStage);
-
-  const applyRowShift = () => {
-    const shiftPx = Math.round(currentShiftPx * 1000) / 1000;
-    swatchRow.style.transform = `translate3d(${-shiftPx}px, 0, 0)`;
-    if (Math.abs(shiftPx) > 0.4 || Math.abs(targetShiftPx - currentShiftPx) > 0.4) {
-      swatchRow.classList.add("traditional-sequence__row--animating");
-    } else {
-      swatchRow.classList.remove("traditional-sequence__row--animating");
-    }
-  };
-
-  const tickProgress = () => {
-    const diff = targetShiftPx - currentShiftPx;
-    currentShiftPx += diff * PROGRESS_EASE;
-    if (Math.abs(diff) <= 0.12) {
+  const tick = (nowMs) => {
+    const totalDelta = targetShiftPx - animationFromShiftPx;
+    if (Math.abs(totalDelta) < SHIFT_SETTLE_EPSILON) {
       currentShiftPx = targetShiftPx;
-      applyRowShift();
-      progressRaf = 0;
-      return;
-    }
-    applyRowShift();
-    progressRaf = window.requestAnimationFrame(tickProgress);
-  };
-
-  const ensureProgressTick = () => {
-    if (!progressRaf) progressRaf = window.requestAnimationFrame(tickProgress);
-  };
-
-  const getStageCount = () => Math.max(0, stageAnchorsPx.length - 1);
-
-  const getStageAnchor = (stageIndex) => {
-    const safeIndex = clamp(stageIndex, 0, stageAnchorsPx.length - 1);
-    return stageAnchorsPx[safeIndex] ?? 0;
-  };
-
-  const shiftByGroups = (deltaPx, triggerPx) => {
-    const stageCount = getStageCount();
-    const isSettling = Math.abs(targetShiftPx - currentShiftPx) > STAGE_SETTLE_EPSILON_PX;
-    if (isSettling) return;
-
-    stageCarryPx = clamp(stageCarryPx + deltaPx, -triggerPx * 2.2, triggerPx * 2.2);
-
-    if (stageCarryPx >= triggerPx && targetStage < stageCount) {
-      targetStage += 1;
-      stageCarryPx = 0;
-    } else if (stageCarryPx <= -triggerPx && targetStage > 0) {
-      targetStage -= 1;
-      stageCarryPx = 0;
     } else {
+      const progressRaw = (nowMs - animationStartTimeMs) / SECTION_SHIFT_DURATION_MS;
+      const progress = clamp(progressRaw, 0, 1);
+      const easedProgress = easeInOutCubic(progress);
+      currentShiftPx = animationFromShiftPx + totalDelta * easedProgress;
+    }
+    scrollRow.style.transform = `translate3d(${-currentShiftPx}px, 0, 0)`;
+    updateCollectionSubtagState();
+    requestReveal();
+    if (Math.abs(targetShiftPx - currentShiftPx) >= SHIFT_SETTLE_EPSILON) {
+      rafId = window.requestAnimationFrame(tick);
+    } else {
+      rafId = 0;
+      currentPhysicalIndex = getNearestPhysicalIndex(currentShiftPx);
+      if (pendingWrapToFirst) {
+        pendingWrapToFirst = false;
+        currentPhysicalIndex = 0;
+        const firstAnchor = clamp(physicalAnchorsPx[0] ?? 0, 0, maxShiftPx);
+        currentShiftPx = firstAnchor;
+        targetShiftPx = firstAnchor;
+        animationFromShiftPx = firstAnchor;
+        animationStartTimeMs = performance.now();
+        scrollRow.style.transform = `translate3d(${-currentShiftPx}px, 0, 0)`;
+        updateCollectionSubtagState();
+        requestReveal();
+      }
+    }
+  };
+
+  const requestTick = () => {
+    if (!rafId) {
+      rafId = window.requestAnimationFrame(tick);
+    }
+  };
+
+  setupTrack();
+
+  const moveToPhysicalIndex = (nextIndex) => {
+    if (!physicalAnchorsPx.length) return;
+    const safeIndex = clamp(nextIndex, 0, physicalAnchorsPx.length - 1);
+    currentPhysicalIndex = safeIndex;
+    const nowMs = performance.now();
+    if (rafId) {
+      const totalDelta = targetShiftPx - animationFromShiftPx;
+      const progressRaw = (nowMs - animationStartTimeMs) / SECTION_SHIFT_DURATION_MS;
+      const progress = clamp(progressRaw, 0, 1);
+      const easedProgress = easeInOutCubic(progress);
+      currentShiftPx = animationFromShiftPx + totalDelta * easedProgress;
+    }
+    animationFromShiftPx = currentShiftPx;
+    animationStartTimeMs = nowMs;
+    targetShiftPx = clamp(physicalAnchorsPx[safeIndex] ?? 0, 0, maxShiftPx);
+    requestTick();
+  };
+
+  const moveNextLooping = () => {
+    const nearestIndex = getNearestPhysicalIndex(targetShiftPx);
+    const baseLogicalIndex =
+      ((nearestIndex % LOGICAL_SECTION_COUNT) + LOGICAL_SECTION_COUNT) %
+      LOGICAL_SECTION_COUNT;
+    if (baseLogicalIndex === LOGICAL_SECTION_COUNT - 1) {
+      pendingWrapToFirst = true;
+      moveToPhysicalIndex(LOGICAL_SECTION_COUNT);
       return;
     }
-
-    updateSubtagMutedState(targetStage);
-    targetShiftPx = clamp(getStageAnchor(targetStage), 0, maxShiftPx);
-    ensureProgressTick();
+    pendingWrapToFirst = false;
+    moveToPhysicalIndex(nearestIndex + 1);
   };
 
-  const activatePinAtTriggerLine = () => {
-    const gapPx = getTraditionalCollectionTriggerGapPx();
-    const currentY = window.scrollY || window.pageYOffset || 0;
-    pinLockY = currentY + gapPx;
-    window.scrollTo({ top: pinLockY, behavior: "auto" });
-    pinActive = true;
-    wasAboveTrigger = false;
-    holdUntilMs = performance.now() + HOLD_BEFORE_SHIFT_MS;
+  const movePrevClamped = () => {
+    pendingWrapToFirst = false;
+    const nearestIndex = getNearestPhysicalIndex(targetShiftPx);
+    moveToPhysicalIndex(nearestIndex - 1);
   };
 
-  window.addEventListener(
-    "wheel",
-    (event) => {
-      const deltaY = getDeltaYInPixels(event);
-      if (Math.abs(deltaY) < 0.01) return;
-      const isEffectActive = currentShiftPx > 0.4 || targetShiftPx > 0.4 || targetStage > 0;
-      const stageCount = getStageCount();
-      const atLastStage =
-        targetStage >= stageCount &&
-        Math.abs(targetShiftPx - currentShiftPx) <= STAGE_SETTLE_EPSILON_PX;
-
-      if (deltaY > 0) {
-        if (!pinActive) return;
-        if (atLastStage) {
-          pinActive = false;
-          return;
-        }
-
-        event.preventDefault();
-        if (performance.now() < holdUntilMs) {
-          return;
-        }
-        shiftByGroups(deltaY, WHEEL_STAGE_TRIGGER_PX);
-        return;
-      }
-
-      // Reverse squares first, then allow upward page scroll once reset.
-      if (deltaY < 0 && (isEffectActive || pinActive)) {
-        const gapPx = getTraditionalCollectionTriggerGapPx();
-        const readyToReverse = pinActive || gapPx >= -REVERSE_TRIGGER_BUFFER_PX;
-        if (!readyToReverse) {
-          // Still below the trigger zone: keep current section and allow native up scroll.
-          return;
-        }
-        if (!pinActive) {
-          activatePinAtTriggerLine();
-          holdUntilMs = 0;
-        }
-        if (targetStage <= 0 && targetShiftPx <= 0.4 && currentShiftPx <= 0.4) {
-          pinActive = false;
-          return;
-        }
-        event.preventDefault();
-        pinActive = true;
-        shiftByGroups(deltaY, WHEEL_STAGE_TRIGGER_PX);
-        if (targetShiftPx <= 0.4 && currentShiftPx <= 0.4 && targetStage <= 0) {
-          pinActive = false;
-        }
-        return;
-      }
-
-      // Once squares are reset, native upward page scroll continues.
-    },
-    { passive: false }
-  );
-
-  if (hasTouchInput) {
-    window.addEventListener(
-      "touchstart",
-      (event) => {
-        const touch = event.touches && event.touches[0];
-        lastTouchY = touch ? touch.clientY : null;
-      },
-      { passive: true }
-    );
-
-    window.addEventListener(
-      "touchmove",
-      (event) => {
-        const touch = event.touches && event.touches[0];
-        if (!touch) return;
-
-        if (lastTouchY === null) {
-          lastTouchY = touch.clientY;
-          return;
-        }
-
-        // Finger moving up means user is scrolling down.
-        const deltaY = lastTouchY - touch.clientY;
-        lastTouchY = touch.clientY;
-        if (Math.abs(deltaY) < 0.01) return;
-
-        const isEffectActive = currentShiftPx > 0.4 || targetShiftPx > 0.4 || targetStage > 0;
-        const stageCount = getStageCount();
-        const atLastStage =
-          targetStage >= stageCount &&
-          Math.abs(targetShiftPx - currentShiftPx) <= STAGE_SETTLE_EPSILON_PX;
-
-        if (deltaY > 0) {
-          if (!pinActive) return;
-          if (atLastStage) {
-            pinActive = false;
-            return;
-          }
-
-          event.preventDefault();
-          if (performance.now() < holdUntilMs) return;
-          shiftByGroups(deltaY, TOUCH_STAGE_TRIGGER_PX);
-          return;
-        }
-
-        // Reverse squares first, then allow upward page scroll once reset.
-        if (deltaY < 0 && (isEffectActive || pinActive)) {
-          const gapPx = getTraditionalCollectionTriggerGapPx();
-          const readyToReverse = pinActive || gapPx >= -REVERSE_TRIGGER_BUFFER_PX;
-          if (!readyToReverse) {
-            return;
-          }
-          if (!pinActive) {
-            activatePinAtTriggerLine();
-            holdUntilMs = 0;
-          }
-          if (targetStage <= 0 && targetShiftPx <= 0.4 && currentShiftPx <= 0.4) {
-            pinActive = false;
-            return;
-          }
-          event.preventDefault();
-          pinActive = true;
-          shiftByGroups(deltaY, TOUCH_STAGE_TRIGGER_PX);
-          if (targetShiftPx <= 0.4 && currentShiftPx <= 0.4 && targetStage <= 0) {
-            pinActive = false;
-          }
-          return;
-        }
-      },
-      { passive: false }
-    );
+  if (sequencePrev) {
+    sequencePrev.addEventListener("click", () => {
+      // Left arrow: move squares visually to the right.
+      movePrevClamped();
+    });
   }
 
+  if (sequenceNext) {
+    sequenceNext.addEventListener("click", () => {
+      // Right arrow: move squares visually to the left.
+      moveNextLooping();
+    });
+  }
+
+  autoShiftTimer = window.setInterval(() => {
+    if (document.hidden) return;
+    if (rafId) return;
+    moveNextLooping();
+  }, AUTO_SHIFT_MS);
+
   window.addEventListener(
-    "scroll",
+    "resize",
     () => {
-      const currentY = window.scrollY || window.pageYOffset || 0;
-      const scrollingDown = currentY > lastScrollY + 0.2;
-
-      const gapPx = getTraditionalCollectionTriggerGapPx();
-      if (gapPx > 0) {
-        wasAboveTrigger = true;
-      }
-
-      if (pinActive) {
-        // Keep a stable lock target to avoid micro-jitter from repeated
-        // gap recalculation against a changing nav rect.
-        if (Math.abs(currentY - pinLockY) > 0.5) {
-          window.scrollTo({ top: pinLockY, behavior: "auto" });
-        }
-        lastScrollY = currentY;
-        return;
-      }
-
-      if (scrollingDown && wasAboveTrigger && gapPx <= 0) {
-        activatePinAtTriggerLine();
-      }
-
-      lastScrollY = currentY;
+      setupTrack();
+      requestReveal();
     },
     { passive: true }
   );
 
   window.addEventListener(
-    "resize",
+    "scroll",
     () => {
-      setupLoopingSquaresTrack();
-      const stageMax = Math.max(0, stageAnchorsPx.length - 1);
-      targetStage = clamp(targetStage, 0, stageMax);
-      updateSubtagMutedState(targetStage);
-      stageCarryPx = 0;
-      targetShiftPx = getStageAnchor(targetStage);
-      currentShiftPx = clamp(currentShiftPx, 0, maxShiftPx);
-      applyRowShift();
+      requestReveal();
     },
     { passive: true }
   );
 };
 
 initTraditionalPinnedRowShift();
+
+const initTraditionalRoomFloodUpload = () => {
+  if (!document.body.classList.contains("page-traditional")) return;
+  const frame = document.getElementById("traditionalRoomFloodFrame");
+  const input = document.getElementById("traditionalRoomFloodInput");
+  const image = document.getElementById("traditionalRoomFloodImage");
+  if (!frame || !input || !image) return;
+
+  let objectUrl = "";
+  const clearObjectUrl = () => {
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      objectUrl = "";
+    }
+  };
+
+  input.addEventListener("change", () => {
+    const file = input.files && input.files[0] ? input.files[0] : null;
+    if (!file || !String(file.type || "").startsWith("image/")) return;
+    clearObjectUrl();
+    objectUrl = URL.createObjectURL(file);
+    image.src = objectUrl;
+    frame.classList.add("has-image");
+  });
+
+  frame.addEventListener("click", () => {
+    input.click();
+  });
+
+  window.addEventListener("beforeunload", clearObjectUrl, { once: true });
+};
+
+initTraditionalRoomFloodUpload();
 
 const hamburger = document.getElementById("hamburger");
 const nav = document.getElementById("navOverlay");
@@ -1375,9 +1249,8 @@ const HERO_NAV_EXTRA_SCROLL_PX = 20;
 const applyInitialHomeNavStateFromScroll = () => {
   if (!topbar || !mainHeroSplit) return;
   const navHeight = topbar.offsetHeight || 68;
-  const topY = window.scrollY || window.pageYOffset || 0;
   const shouldSolid = IS_TRADITIONAL_PAGE
-    ? topY > TRADITIONAL_NAV_START_Y
+    ? (window.scrollY || window.pageYOffset || 0) > TRADITIONAL_NAV_START_Y
     : mainHeroSplit.getBoundingClientRect().bottom <= navHeight + 1;
   topbar.classList.remove("topbar-pop-in", "topbar-pop-out", "topbar-exit-extend");
   topbar.classList.toggle("is-solid", shouldSolid);
@@ -1489,7 +1362,6 @@ if (topbar && mainHeroSplit) {
       }
     }
     if (IS_TRADITIONAL_PAGE) {
-      // Traditional: trigger as soon as user scrolls down from top.
       hasPassedHero = currentScrollY > TRADITIONAL_NAV_START_Y;
       titleBackInHero = !hasPassedHero;
     }
@@ -1658,7 +1530,12 @@ if (topbar && mainHeroSplit) {
   requestHeroNavSync();
 }
 
-if (topbar && mainHeroSplit && heroTitle && ENABLE_HERO_TITLE_SCROLL_ANIMATION) {
+if (
+  topbar &&
+  mainHeroSplit &&
+  heroTitle &&
+  ENABLE_HERO_TITLE_SCROLL_ANIMATION
+) {
   const heroTitleLink = heroTitle.querySelector(".text-block__title-home");
 
   if (heroTitleLink) {
@@ -2948,12 +2825,7 @@ const initPostHeroScrollReveal = () => {
     }
 
     if (block.classList.contains("traditional-sequence")) {
-      const swatchCards = block.querySelectorAll(".traditional-sequence__card");
-      if (swatchCards.length) {
-        swatchCards.forEach((card, idx) => addRevealItem(card, idx * 70));
-      } else {
-        addRevealItem(block, 0);
-      }
+      addRevealItem(block, 0, { noLift: true });
       continue;
     }
 
